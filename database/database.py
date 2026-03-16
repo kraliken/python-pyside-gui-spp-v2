@@ -322,12 +322,21 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Hiba a mentés során: {e}"
 
-    def call_vendor_insert1(self):
+    def call_vendor_insert1(self, date):
+        """Szállító staging → Hist tárolt eljárás hívása dátum paraméterrel.
+
+        Args:
+            date: str formátumban "YYYY-MM-DD" — a könyvelési dátum, amelyet
+                  a tárolt eljárás @datum DATE paraméterként vár.
+
+        Megjegyzés (SQL Server oldal): A dbo.szallito_insert1 tárolt eljárást
+        módosítani kell: fogadjon @datum DATE paramétert, és szűrjön/jelöljön
+        erre a dátumra a staging → Hist mozgatás során.
+        """
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
-            # cursor.execute("EXEC dbo.szallito_insert1")
-            cursor.execute("{CALL dbo.szallito_insert1}")
+            cursor.execute("{CALL dbo.szallito_insert1(?)}", (date,))
             conn.commit()
             conn.close()
             return True, "Az IremsSzallito_Stage adatai mentve az Irems_Hist táblába."
@@ -335,12 +344,21 @@ class DatabaseManager:
         except Exception as e:
             return False, str(e)
 
-    def call_customer_insert1(self):
+    def call_customer_insert1(self, date):
+        """Vevő staging → Hist tárolt eljárás hívása dátum paraméterrel.
+
+        Args:
+            date: str formátumban "YYYY-MM-DD" — a könyvelési dátum, amelyet
+                  a tárolt eljárás @datum DATE paraméterként vár.
+
+        Megjegyzés (SQL Server oldal): A dbo.vevo_insert1 tárolt eljárást
+        módosítani kell: fogadjon @datum DATE paramétert, és szűrjön/jelöljön
+        erre a dátumra a staging → Hist mozgatás során.
+        """
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
-            # cursor.execute("EXEC dbo.szallito_insert1")
-            cursor.execute("{CALL dbo.vevo_insert1}")
+            cursor.execute("{CALL dbo.vevo_insert1(?)}", (date,))
             conn.commit()
             conn.close()
             return True, "Az IremsVevo_Stage adatai mentve az Irems_Hist táblába."
@@ -348,12 +366,21 @@ class DatabaseManager:
         except Exception as e:
             return False, str(e)
 
-    def call_bank_insert1(self):
+    def call_bank_insert1(self, date):
+        """Bank staging → Hist tárolt eljárás hívása dátum paraméterrel.
+
+        Args:
+            date: str formátumban "YYYY-MM-DD" — a könyvelési dátum, amelyet
+                  a tárolt eljárás @datum DATE paraméterként vár.
+
+        Megjegyzés (SQL Server oldal): A dbo.bank_insert1 tárolt eljárást
+        módosítani kell: fogadjon @datum DATE paramétert, és szűrjön/jelöljön
+        erre a dátumra a staging → Hist mozgatás során.
+        """
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
-            # cursor.execute("EXEC dbo.szallito_insert1")
-            cursor.execute("{CALL dbo.bank_insert1}")
+            cursor.execute("{CALL dbo.bank_insert1(?)}", (date,))
             conn.commit()
             conn.close()
             return True, "Az Bank_Stage adatai mentve az Bank_Hist táblába."

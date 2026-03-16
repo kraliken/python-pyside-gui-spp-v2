@@ -242,7 +242,7 @@ QDateEdit {
     background: white;
     border: 1px solid #ced4da;
     border-radius: 4px;
-    padding: 4px 8px;
+    padding: 4px 28px 4px 8px;
     min-height: 28px;
     color: #212529;
 }
@@ -252,9 +252,19 @@ QDateEdit:focus {
     outline: none;
 }
 
+QDateEdit:disabled {
+    background: #f8f9fa;
+    color: #495057;
+    border-color: #dee2e6;
+}
+
 QDateEdit::drop-down {
+    subcontrol-origin: border;
+    subcontrol-position: center right;
     border: none;
-    width: 20px;
+    width: 16px;
+    image: url(assets/icons/calendar.svg);
+    margin-right: 6px;
 }
 
 QDateEdit::up-button,
@@ -263,6 +273,7 @@ QDateEdit::down-button {
     height: 0;
     border: none;
 }
+
 
 
 /* ============================================================

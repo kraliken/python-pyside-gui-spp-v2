@@ -50,9 +50,9 @@ class PandasModel(QAbstractTableModel):
                 return alignment
 
         elif role == Qt.BackgroundRole and row in self.invalid_rows:
-            return QBrush(QColor(255, 200, 200))  # világos piros háttér
+            return QBrush(QColor("#fff5f5"))  # design-spec: halvány piros háttér
         elif role == Qt.ForegroundRole and row in self.invalid_rows:
-            return QBrush(QColor(64, 64, 64))  # sötétszürke szöveg
+            return QBrush(QColor("#e03131"))  # design-spec: piros szöveg
 
         return None
 

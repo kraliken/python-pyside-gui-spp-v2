@@ -244,8 +244,7 @@ class CustomerExcelImportView(BaseImportView):
                 self.df_to_save_in_db["osszeg"], errors="coerce"
             )
 
-            self.clear_button.setEnabled(True)
-            self.save_button.setEnabled(True)
+            self._on_file_loaded()
 
             def format_thousands(val):
                 try:
@@ -325,6 +324,7 @@ class CustomerExcelImportView(BaseImportView):
             model = self.table_view.model()
             if isinstance(model, PandasModel):
                 model.set_invalid_rows(error_rows)
+            self._error_rows = error_rows
             QMessageBox.warning(
                 self,
                 "Validációs hiba",

@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         self._nav_buttons: list[QPushButton] = []
         self._active_button: QPushButton | None = None
 
-        self.setWindowTitle("SPP Adatfeldolgozó v0.1")
+        self.setWindowTitle("BPiON - GUI")
         self.setMinimumSize(1200, 650)
 
         # QMenuBar elrejtése — sidebar váltja ki
@@ -86,7 +86,7 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
 
         # Fejlécsáv (teljes szélességben, sötét)
-        # main_layout.addWidget(self._build_header())
+        main_layout.addWidget(self._build_header())
 
         # Törzs: sidebar + tartalomterület
         body = QWidget()

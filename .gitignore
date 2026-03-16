@@ -40,3 +40,4 @@ build/
 
 # Egyéb fájlok, amiket nem szeretnél verziókezelni
 *.md
+exports/

@@ -130,8 +130,7 @@ class CustomerImportView(BaseImportView):
 
         self.df_all = pd.concat([self.df_all, new_df], ignore_index=True)
 
-        self.clear_button.setEnabled(True)
-        self.save_button.setEnabled(True)
+        self._on_file_loaded()
 
         def format_thousands(val):
             try:
@@ -215,6 +214,7 @@ class CustomerImportView(BaseImportView):
             model = self.table_view.model()
             if isinstance(model, PandasModel):
                 model.set_invalid_rows(error_rows)
+            self._error_rows = error_rows
             QMessageBox.warning(
                 self,
                 "Validációs hiba",
