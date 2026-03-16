@@ -1,0 +1,42 @@
+# Python bytecode és cache fájlok
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtuális környezet (ne verziókezeljük)
+venv/
+env/
+.venv/
+ENV/
+
+# Editor-specifikus fájlok
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Mac / Windows rejtett fájlok
+.DS_Store
+Thumbs.db
+
+# Futtatás során keletkező fájlok
+*.log
+*.tmp
+*.bak
+
+# Python egg info
+*.egg-info/
+dist/
+build/
+
+# Jupyter notebook checkpoint (ha használsz)
+.ipynb_checkpoints/
+
+# Környezeti konfiguráció (ha használsz)
+.env
+
+# SQLite (ha ideiglenesen tesztelsz fájlba mentéssel)
+*.sqlite3
+
+# Egyéb fájlok, amiket nem szeretnél verziókezelni
+*.md

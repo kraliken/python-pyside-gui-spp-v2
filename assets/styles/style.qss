@@ -1,0 +1,424 @@
+/* ============================================================
+   SPP Adatfeldolgozó — style.qss
+   B2: Teljes vizuális stíluslap
+   ============================================================ */
+
+
+/* ============================================================
+   ALAPBEÁLLÍTÁSOK
+   ============================================================ */
+
+QWidget {
+    font-family: "Segoe UI", "Arial", sans-serif;
+    font-size: 13px;
+    color: #212529;
+    background: transparent;
+}
+
+QMainWindow {
+    background: #1e2130;
+}
+
+/* Tartalomterület — QStackedWidget gyerek widgetek */
+QStackedWidget > QWidget {
+    background: #f8f9fa;
+}
+
+
+/* ============================================================
+   GOMBOK
+   ============================================================ */
+
+/* Elsődleges gomb (alapértelmezett) */
+QPushButton {
+    background: #3b5bdb;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    min-height: 30px;
+}
+
+QPushButton:hover {
+    background: #4c6ef5;
+}
+
+QPushButton:pressed {
+    background: #364fc7;
+}
+
+QPushButton:disabled {
+    background: #adb5bd;
+    color: #e9ecef;
+}
+
+/* Másodlagos gomb (pl. Mentés history-ba) */
+QPushButton#secondary_button {
+    background: transparent;
+    color: #495057;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 6px 16px;
+}
+
+QPushButton#secondary_button:hover {
+    background: #f1f3f5;
+    border-color: #adb5bd;
+}
+
+QPushButton#secondary_button:pressed {
+    background: #e9ecef;
+}
+
+QPushButton#secondary_button:disabled {
+    color: #adb5bd;
+    border-color: #dee2e6;
+    background: transparent;
+}
+
+/* Törlés gomb (piros keret + piros szöveg) */
+QPushButton#delete_button,
+QPushButton#clear_button {
+    background: transparent;
+    color: #e03131;
+    border: 1px solid #e03131;
+    border-radius: 4px;
+    padding: 6px 16px;
+}
+
+QPushButton#delete_button:hover,
+QPushButton#clear_button:hover {
+    background: #fff5f5;
+}
+
+QPushButton#delete_button:pressed,
+QPushButton#clear_button:pressed {
+    background: #ffe3e3;
+}
+
+QPushButton#delete_button:disabled,
+QPushButton#clear_button:disabled {
+    color: #ffa8a8;
+    border-color: #ffa8a8;
+    background: transparent;
+}
+
+
+/* ============================================================
+   TÁBLÁZAT (QTableView + QHeaderView)
+   ============================================================ */
+
+QTableView {
+    background: white;
+    alternate-background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    gridline-color: #e9ecef;
+    selection-background-color: #dbe4ff;
+    selection-color: #1c1c2e;
+    outline: none;
+}
+
+QTableView::item {
+    padding: 4px 8px;
+    border: none;
+}
+
+QTableView::item:selected {
+    background: #dbe4ff;
+    color: #1c1c2e;
+}
+
+/* Hibás sor (PandasModel background szerepe, de ha inline: #fff5f5, #e03131) */
+QTableView::item[invalid="true"] {
+    background: #fff5f5;
+    color: #e03131;
+}
+
+QHeaderView {
+    background: #f1f3f5;
+}
+
+QHeaderView::section {
+    background: #f1f3f5;
+    color: #495057;
+    font-weight: 600;
+    font-size: 12px;
+    padding: 6px 8px;
+    border: none;
+    border-right: 1px solid #dee2e6;
+    border-bottom: 2px solid #dee2e6;
+}
+
+QHeaderView::section:last {
+    border-right: none;
+}
+
+QHeaderView::section:hover {
+    background: #e9ecef;
+}
+
+QHeaderView::up-arrow {
+    width: 7px;
+    height: 7px;
+    subcontrol-position: center right;
+    subcontrol-origin: padding;
+    right: 6px;
+}
+
+QHeaderView::down-arrow {
+    width: 7px;
+    height: 7px;
+    subcontrol-position: center right;
+    subcontrol-origin: padding;
+    right: 6px;
+}
+
+/* Sarokgomb (bal felső üres cella) */
+QTableView QTableCornerButton::section {
+    background: #f1f3f5;
+    border: none;
+    border-right: 1px solid #dee2e6;
+    border-bottom: 2px solid #dee2e6;
+}
+
+
+/* ============================================================
+   LISTAWIDGET (importnézetek fájllistája)
+   ============================================================ */
+
+QListWidget {
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 4px;
+    outline: none;
+}
+
+QListWidget::item {
+    padding: 5px 8px;
+    border-radius: 3px;
+    color: #212529;
+}
+
+QListWidget::item:selected {
+    background: #dbe4ff;
+    color: #1c1c2e;
+}
+
+QListWidget::item:hover {
+    background: #f1f3f5;
+}
+
+
+/* ============================================================
+   LABEL-EK
+   ============================================================ */
+
+/* Nézet főcíme */
+QLabel#view_title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1c1c2e;
+    padding: 12px 0 6px 0;
+    background: transparent;
+}
+
+/* Üres állapot tájékoztató szöveg */
+QLabel#empty_label {
+    color: #868e96;
+    font-size: 13px;
+    background: transparent;
+}
+
+
+/* ============================================================
+   DÁTUMSZŰRŐ (QDateEdit) — D1 feladathoz előkészítve
+   ============================================================ */
+
+QDateEdit {
+    background: white;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-height: 28px;
+    color: #212529;
+}
+
+QDateEdit:focus {
+    border-color: #3b5bdb;
+    outline: none;
+}
+
+QDateEdit::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QDateEdit::up-button,
+QDateEdit::down-button {
+    width: 0;
+    height: 0;
+    border: none;
+}
+
+
+/* ============================================================
+   DIALÓGUSOK (progress, üzenet)
+   ============================================================ */
+
+QDialog {
+    background: white;
+}
+
+QDialog QLabel {
+    color: #212529;
+    font-size: 13px;
+    padding: 8px;
+    background: transparent;
+}
+
+QMessageBox {
+    background: white;
+}
+
+QMessageBox QLabel {
+    color: #212529;
+    background: transparent;
+}
+
+QMessageBox QPushButton {
+    min-width: 80px;
+}
+
+
+/* ============================================================
+   GÖRGETŐSÁVOK
+   ============================================================ */
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    border: none;
+    margin: 2px 0;
+}
+
+QScrollBar::handle:vertical {
+    background: #ced4da;
+    border-radius: 4px;
+    min-height: 32px;
+    margin: 0 2px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #868e96;
+}
+
+QScrollBar::handle:vertical:pressed {
+    background: #495057;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+    border: none;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 8px;
+    border: none;
+    margin: 0 2px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #ced4da;
+    border-radius: 4px;
+    min-width: 32px;
+    margin: 2px 0;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: #868e96;
+}
+
+QScrollBar::handle:horizontal:pressed {
+    background: #495057;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0;
+    border: none;
+}
+
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: transparent;
+}
+
+
+/* ============================================================
+   SPECIÁLIS TARTALOM-WIDGETEK
+   ============================================================ */
+
+/* Import nézetek bal oldali panele */
+QWidget#left_panel {
+    background: white;
+}
+
+/* Import nézetek bal oldali "Nincs betöltött fájl" felirat */
+QLabel#no_file_label {
+    color: #868e96;
+    font-size: 12px;
+    background: transparent;
+}
+
+/* Rekordszám jobb oldalon (pl. "142 sor") */
+QLabel#record_count_label {
+    color: #868e96;
+    font-size: 12px;
+    background: transparent;
+}
+
+
+/* ============================================================
+   SIDEBAR — objectName alapú célzás
+   (A dinamikus aktív/inaktív állapot inline marad main_window.py-ban)
+   ============================================================ */
+
+QWidget#app_header {
+    background: #151929;
+}
+
+QWidget#sidebar {
+    background: #1e2130;
+}
+
+QLabel#header_title {
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    background: transparent;
+}
+
+QLabel#header_version {
+    color: #6e7891;
+    font-size: 12px;
+    background: transparent;
+}
+
+QLabel#sidebar_section {
+    color: #6e7891;
+    font-size: 10px;
+    font-weight: 600;
+    background: transparent;
+    padding-left: 20px;
+}
