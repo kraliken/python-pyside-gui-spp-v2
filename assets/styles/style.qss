@@ -235,6 +235,103 @@ QLabel#empty_label {
 
 
 /* ============================================================
+   SZÖVEGMEZŐ (QLineEdit)
+   ============================================================ */
+
+QLineEdit {
+    background: white;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-height: 28px;
+    color: #212529;
+}
+
+QLineEdit:focus {
+    border-color: #3b5bdb;
+    outline: none;
+}
+
+QLineEdit:disabled {
+    background: #f8f9fa;
+    color: #868e96;
+    border-color: #dee2e6;
+}
+
+
+/* ============================================================
+   LEGÖRDÜLŐ (QComboBox)
+   ============================================================ */
+
+QComboBox {
+    background: white;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-height: 28px;
+    color: #212529;
+}
+
+QComboBox:focus {
+    border-color: #3b5bdb;
+}
+
+QComboBox:disabled {
+    background: #f8f9fa;
+    color: #868e96;
+    border-color: #dee2e6;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background: white;
+    border: 1px solid #ced4da;
+    selection-background-color: #dbe4ff;
+    selection-color: #1c1c2e;
+    outline: none;
+}
+
+
+/* ============================================================
+   SZÖVEGES BEVITELI MEZŐ (QTextEdit)
+   ============================================================ */
+
+QTextEdit {
+    background: white;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: #212529;
+}
+
+QTextEdit:focus {
+    border-color: #3b5bdb;
+}
+
+QTextEdit:disabled {
+    background: #f8f9fa;
+    color: #868e96;
+    border-color: #dee2e6;
+}
+
+
+/* ============================================================
+   BEÁLLÍTÁSOK NÉZETEK — részlet panel
+   ============================================================ */
+
+QLabel#detail_panel_title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1c1c2e;
+    background: transparent;
+}
+
+
+/* ============================================================
    DÁTUMSZŰRŐ (QDateEdit) — D1 feladathoz előkészítve
    ============================================================ */
 

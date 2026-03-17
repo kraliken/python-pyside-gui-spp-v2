@@ -366,12 +366,8 @@ class DatabaseManager:
         except Exception as e:
             return False, str(e)
 
-    def call_bank_insert1(self, date):
+    def call_bank_insert1(self):
         """Bank staging → Hist tárolt eljárás hívása dátum paraméterrel.
-
-        Args:
-            date: str formátumban "YYYY-MM-DD" — a könyvelési dátum, amelyet
-                  a tárolt eljárás @datum DATE paraméterként vár.
 
         Megjegyzés (SQL Server oldal): A dbo.bank_insert1 tárolt eljárást
         módosítani kell: fogadjon @datum DATE paramétert, és szűrjön/jelöljön
@@ -380,13 +376,56 @@ class DatabaseManager:
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
-            cursor.execute("{CALL dbo.bank_insert1(?)}", (date,))
+            cursor.execute("{CALL dbo.bank_insert1}")
             conn.commit()
             conn.close()
             return True, "Az Bank_Stage adatai mentve az Bank_Hist táblába."
 
         except Exception as e:
             return False, str(e)
+
+    def query_bank_account_numbers(self) -> pd.DataFrame:
+        """Bankszámlaszám törzsadatok lekérdezése (dbo.Bankszamlaszam_torzs)."""
+        try:
+            engine = self.connect()
+            with engine.connect() as conn:
+                df = pd.read_sql(
+                    "SELECT ID, Bankszamlaszam, Bankszamlaszam_fokonyv, "
+                    "Bankszamlaszam_deviza, Bankszamlaszam_tipus, Partner "
+                    "FROM dbo.Bankszamlaszam_torzs ORDER BY ID",
+                    conn,
+                )
+            return df
+        except Exception as e:
+            raise RuntimeError(f"Hiba a lekérdezés során: {e}")
+
+    def query_bank_internal_codes(self) -> pd.DataFrame:
+        """Bank belső kód törzsadatok lekérdezése (dbo.Bank_belsokod)."""
+        try:
+            engine = self.connect()
+            with engine.connect() as conn:
+                df = pd.read_sql(
+                    "SELECT ID, Belsokod, Fokony, FokonyvText "
+                    "FROM dbo.Bank_belsokod ORDER BY ID",
+                    conn,
+                )
+            return df
+        except Exception as e:
+            raise RuntimeError(f"Hiba a lekérdezés során: {e}")
+
+    def query_partner_mapping(self) -> pd.DataFrame:
+        """Partner mapping törzsadatok lekérdezése (dbo.Partner_mapping)."""
+        try:
+            engine = self.connect()
+            with engine.connect() as conn:
+                df = pd.read_sql(
+                    "SELECT ID, UMS_parnter, Combosoft_partner "
+                    "FROM dbo.Partner_mapping ORDER BY ID",
+                    conn,
+                )
+            return df
+        except Exception as e:
+            raise RuntimeError(f"Hiba a lekérdezés során: {e}")
 
     def insert_bank_account_number_rows_bulk(self, df):
         if df.empty:

@@ -1,9 +1,9 @@
-# ui/views/master_data/bank_internal_code/edit_view.py
+# ui/views/master_data/partner/edit_view.py
 #
-# Bank belső kódok beállítás nézet.
+# Partnerek beállítás nézet.
 # C1: Lekérdezés gomb → DB lekérdezés → táblázat feltöltése + rekordszám label.
 # C2 (szerkesztés/törlés): még NEM implementálva.
-# DB tábla: dbo.Bank_belsokod
+# DB tábla: dbo.Partner_mapping  (UMS_parnter — typo az adatbázisban)
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QTableView,
     QHeaderView,
     QLineEdit,
-    QTextEdit,
     QFrame,
     QSizePolicy,
     QMessageBox,
@@ -37,15 +36,14 @@ from ui.icons import (
     CLR_DANGER_DIS,
 )
 
-# DB oszlop → megjelenítési név leképezés
+# DB oszlop → megjelenítési név leképezés (UMS_parnter: typo az adatbázisban)
 _COL_MAP = {
-    "Belsokod": "Belső kód",
-    "Fokony": "Főkönyv",
-    "FokonyvText": "Leírás",
+    "UMS_parnter": "UMS partner",
+    "Combosoft_partner": "Combosoft partner",
 }
 
 
-class BankInternalCodeEditView(QWidget):
+class PartnerEditView(QWidget):
     def __init__(self):
         super().__init__()
         self._selected_count = 0
@@ -63,7 +61,7 @@ class BankInternalCodeEditView(QWidget):
         main_layout.setSpacing(12)
 
         # --- Cím ---
-        title = QLabel("Bank belső kódok")
+        title = QLabel("Partnerek")
         title.setObjectName("view_title")
         main_layout.addWidget(title)
 
@@ -115,7 +113,7 @@ class BankInternalCodeEditView(QWidget):
         table_area_layout.setSpacing(0)
 
         self.info_label = QLabel(
-            "Kattints a Lekérdezés gombra a bank belső kódok betöltéséhez"
+            "Kattints a Lekérdezés gombra a partnerek betöltéséhez"
         )
         self.info_label.setObjectName("empty_label")
         self.info_label.setAlignment(Qt.AlignCenter)
@@ -144,28 +142,22 @@ class BankInternalCodeEditView(QWidget):
         detail_layout.setContentsMargins(16, 16, 16, 16)
         detail_layout.setSpacing(10)
 
-        panel_title = QLabel("Kiválasztott belső kód adatai")
+        panel_title = QLabel("Kiválasztott partner adatai")
         panel_title.setObjectName("detail_panel_title")
         panel_title.setWordWrap(True)
         detail_layout.addWidget(panel_title)
 
         detail_layout.addSpacing(4)
 
-        detail_layout.addWidget(self._make_field_label("Belső kód"))
-        self.bc_code_edit = QLineEdit()
-        self.bc_code_edit.setEnabled(False)
-        detail_layout.addWidget(self.bc_code_edit)
+        detail_layout.addWidget(self._make_field_label("UMS partner"))
+        self.ums_partner_edit = QLineEdit()
+        self.ums_partner_edit.setEnabled(False)
+        detail_layout.addWidget(self.ums_partner_edit)
 
-        detail_layout.addWidget(self._make_field_label("Főkönyv"))
-        self.bc_ledger_edit = QLineEdit()
-        self.bc_ledger_edit.setEnabled(False)
-        detail_layout.addWidget(self.bc_ledger_edit)
-
-        detail_layout.addWidget(self._make_field_label("Leírás"))
-        self.bc_description_edit = QTextEdit()
-        self.bc_description_edit.setEnabled(False)
-        self.bc_description_edit.setFixedHeight(80)
-        detail_layout.addWidget(self.bc_description_edit)
+        detail_layout.addWidget(self._make_field_label("Combosoft partner"))
+        self.combosoft_partner_edit = QLineEdit()
+        self.combosoft_partner_edit.setEnabled(False)
+        detail_layout.addWidget(self.combosoft_partner_edit)
 
         detail_layout.addStretch()
 
@@ -185,7 +177,7 @@ class BankInternalCodeEditView(QWidget):
 
     def _load_data(self):
         try:
-            df = self._db.query_bank_internal_codes()
+            df = self._db.query_partner_mapping()
             df = df.drop(columns=["ID"], errors="ignore")
             df = df.rename(columns=_COL_MAP)
 

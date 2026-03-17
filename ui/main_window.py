@@ -39,6 +39,7 @@ from ui.views.customer.excel_import_view import CustomerExcelImportView
 
 from ui.views.master_data.bank_account.edit_view import BankAccountEditView
 from ui.views.master_data.bank_internal_code.edit_view import BankInternalCodeEditView
+from ui.views.master_data.partner.edit_view import PartnerEditView
 
 
 # Sidebar színek
@@ -76,6 +77,7 @@ class MainWindow(QMainWindow):
         self.customer_excel_import_view = CustomerExcelImportView()
         self.bank_account_number_edit_view = BankAccountEditView()
         self.bank_internal_code_edit_view = BankInternalCodeEditView()
+        self.partner_edit_view = PartnerEditView()
 
         # Főwidget
         central_widget = QWidget()
@@ -111,6 +113,7 @@ class MainWindow(QMainWindow):
             self.customer_excel_import_view,
             self.bank_account_number_edit_view,
             self.bank_internal_code_edit_view,
+            self.partner_edit_view,
         ]:
             self.stacked_widget.addWidget(view)
 
@@ -131,6 +134,7 @@ class MainWindow(QMainWindow):
         #   6  Vevő › Importálás (.XLSX)      ← customer_import
         #   7  Bankszámlaszám
         #   8  Bank belső kód
+        #   9  Partnerek
         self._action_map = {
             "bank_import": (self.bank_import_view, self._nav_buttons[2]),
             "vendor_import": (self.vendor_excel_import_view, self._nav_buttons[4]),
@@ -223,6 +227,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._make_section_label("BEÁLLÍTÁSOK"))
         add("  Bankszámlaszám", self.bank_account_number_edit_view)
         add("  Bank belső kód", self.bank_internal_code_edit_view)
+        add("  Partnerek", self.partner_edit_view)
 
         layout.addStretch()
 
