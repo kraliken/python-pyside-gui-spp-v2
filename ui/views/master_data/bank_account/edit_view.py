@@ -89,34 +89,12 @@ class BankAccountEditView(QWidget):
         # --- Eszközsáv ---
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
-        toolbar.setContentsMargins(0, 0, 304, 0)
+        toolbar.setContentsMargins(0, 0, 0, 0)
 
         self.query_button = QPushButton("Lekérdezés")
         set_button_icon(self.query_button, ICON_SEARCH, CLR_PRIMARY, CLR_PRIMARY_DIS)
         self.query_button.clicked.connect(self._prepare_query)
         toolbar.addWidget(self.query_button)
-
-        self.add_row_button = QPushButton("Új sor")
-        self.add_row_button.setObjectName("secondary_button")
-        set_button_icon(
-            self.add_row_button, ICON_PLUS, CLR_SECONDARY, CLR_SECONDARY_DIS
-        )
-        self.add_row_button.setEnabled(False)
-        self.add_row_button.clicked.connect(self._on_add_row)
-        toolbar.addWidget(self.add_row_button)
-
-        self.delete_button = QPushButton("Törlés")
-        self.delete_button.setObjectName("delete_button")
-        set_button_icon(self.delete_button, ICON_TRASH, CLR_DANGER, CLR_DANGER_DIS)
-        self.delete_button.setEnabled(False)
-        self.delete_button.clicked.connect(self._on_delete)
-        toolbar.addWidget(self.delete_button)
-
-        self.save_button = QPushButton("Mentés")
-        set_button_icon(self.save_button, ICON_SAVE, CLR_PRIMARY, CLR_PRIMARY_DIS)
-        self.save_button.setEnabled(False)
-        self.save_button.clicked.connect(self._on_save)
-        toolbar.addWidget(self.save_button)
 
         toolbar.addStretch()
 
@@ -126,9 +104,35 @@ class BankAccountEditView(QWidget):
         self.export_button.clicked.connect(self._on_export)
         toolbar.addWidget(self.export_button)
 
-        self.record_count_label = QLabel("")
-        self.record_count_label.setObjectName("record_count_label")
-        toolbar.addWidget(self.record_count_label)
+        # CRUD gombsor — 320px-es fix widget, pontosan a detail panel fölött
+        crud_widget = QWidget()
+        crud_widget.setFixedWidth(320)
+        crud_layout = QHBoxLayout(crud_widget)
+        crud_layout.setContentsMargins(16, 0, 16, 0)
+        crud_layout.setSpacing(6)
+
+        self.add_row_button = QPushButton("Új sor")
+        self.add_row_button.setObjectName("secondary_button")
+        set_button_icon(self.add_row_button, ICON_PLUS, CLR_SECONDARY, CLR_SECONDARY_DIS)
+        self.add_row_button.setEnabled(False)
+        self.add_row_button.clicked.connect(self._on_add_row)
+        crud_layout.addWidget(self.add_row_button)
+
+        self.delete_button = QPushButton("Törlés")
+        self.delete_button.setObjectName("delete_button")
+        set_button_icon(self.delete_button, ICON_TRASH, CLR_DANGER, CLR_DANGER_DIS)
+        self.delete_button.setEnabled(False)
+        self.delete_button.clicked.connect(self._on_delete)
+        crud_layout.addWidget(self.delete_button)
+
+        self.save_button = QPushButton("Mentés")
+        set_button_icon(self.save_button, ICON_SAVE, CLR_PRIMARY, CLR_PRIMARY_DIS)
+        self.save_button.setEnabled(False)
+        self.save_button.clicked.connect(self._on_save)
+        crud_layout.addWidget(self.save_button)
+
+        crud_layout.addStretch()
+        toolbar.addWidget(crud_widget)
 
         main_layout.addLayout(toolbar)
 
@@ -162,25 +166,23 @@ class BankAccountEditView(QWidget):
         self.table_view.hide()
         table_area_layout.addWidget(self.table_view)
 
+        self.record_count_label = QLabel("")
+        self.record_count_label.setObjectName("record_count_label")
+        self.record_count_label.setStyleSheet("font-size: 12px; color: #868e96; padding: 4px 0 0 2px;")
+        table_area_layout.addWidget(self.record_count_label)
+
         content_layout.addWidget(table_area, 1)
 
         # Jobb: részlet panel
         detail_panel = QFrame()
         detail_panel.setObjectName("detail_panel")
-        detail_panel.setFixedWidth(280)
+        detail_panel.setFixedWidth(320)
         detail_panel.setStyleSheet("QFrame#detail_panel { background: white; }")
         detail_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
 
         detail_layout = QVBoxLayout(detail_panel)
         detail_layout.setContentsMargins(16, 16, 16, 16)
         detail_layout.setSpacing(10)
-
-        # panel_title = QLabel("Kiválasztott bankszámlaszám adatai")
-        # panel_title.setObjectName("detail_panel_title")
-        # panel_title.setWordWrap(True)
-        # detail_layout.addWidget(panel_title)
-
-        # detail_layout.addSpacing(4)
 
         detail_layout.addWidget(self._make_field_label("Bankszámlaszám"))
         self.ba_number_edit = QLineEdit()
@@ -490,7 +492,7 @@ class BankAccountEditView(QWidget):
     def _run_export(self):
         try:
             df = self._db.query_bank_account_numbers()
-            df_export = df.drop(columns=["ID"], errors="ignore").rename(columns=_COL_MAP)
+            df_export = df.rename(columns={"ID": "ID", **_COL_MAP})
             exports_dir = os.path.join(_APP_ROOT, "exports")
             os.makedirs(exports_dir, exist_ok=True)
             filename = f"bankszamlaszamok_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.xlsx"

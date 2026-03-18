@@ -474,6 +474,18 @@ class DatabaseManager:
         except Exception as e:
             return False, str(e)
 
+    def call_partner_insert(self):
+        """UMS partnerek beolvasása Bank_lek1-ből a Partner_mapping táblába (dbo.partnerInsert)."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute("{CALL dbo.partnerInsert}")
+            conn.commit()
+            conn.close()
+            return True, "Az UMS partner szinkronizálás sikeresen lefutott."
+        except Exception as e:
+            return False, str(e)
+
     def delete_bank_account(self, id: int):
         """Bankszámlaszám sor törlése ID alapján (dbo.Bankszamlaszam_torzs)."""
         try:

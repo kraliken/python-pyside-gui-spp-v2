@@ -31,6 +31,7 @@ from ui.dialogs.db_operation_progress import DbOperationProgressDialog
 from ui.icons import (
     ICON_SEARCH,
     ICON_PLUS,
+    ICON_UPLOAD,
     ICON_TRASH,
     ICON_SAVE,
     ICON_DOWNLOAD,
@@ -82,34 +83,18 @@ class PartnerEditView(QWidget):
         # --- Eszközsáv ---
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
-        toolbar.setContentsMargins(0, 0, 304, 0)
+        toolbar.setContentsMargins(0, 0, 0, 0)
 
         self.query_button = QPushButton("Lekérdezés")
         set_button_icon(self.query_button, ICON_SEARCH, CLR_PRIMARY, CLR_PRIMARY_DIS)
         self.query_button.clicked.connect(self._prepare_query)
         toolbar.addWidget(self.query_button)
 
-        self.add_row_button = QPushButton("Új sor")
-        self.add_row_button.setObjectName("secondary_button")
-        set_button_icon(
-            self.add_row_button, ICON_PLUS, CLR_SECONDARY, CLR_SECONDARY_DIS
-        )
-        self.add_row_button.setEnabled(False)
-        self.add_row_button.clicked.connect(self._on_add_row)
-        toolbar.addWidget(self.add_row_button)
-
-        self.delete_button = QPushButton("Törlés")
-        self.delete_button.setObjectName("delete_button")
-        set_button_icon(self.delete_button, ICON_TRASH, CLR_DANGER, CLR_DANGER_DIS)
-        self.delete_button.setEnabled(False)
-        self.delete_button.clicked.connect(self._on_delete)
-        toolbar.addWidget(self.delete_button)
-
-        self.save_button = QPushButton("Mentés")
-        set_button_icon(self.save_button, ICON_SAVE, CLR_PRIMARY, CLR_PRIMARY_DIS)
-        self.save_button.setEnabled(False)
-        self.save_button.clicked.connect(self._on_save)
-        toolbar.addWidget(self.save_button)
+        self.sync_button = QPushButton("UMS szinkron")
+        self.sync_button.setObjectName("secondary_button")
+        set_button_icon(self.sync_button, ICON_UPLOAD, CLR_SECONDARY, CLR_SECONDARY_DIS)
+        self.sync_button.clicked.connect(self._on_ums_sync)
+        toolbar.addWidget(self.sync_button)
 
         toolbar.addStretch()
 
@@ -125,9 +110,35 @@ class PartnerEditView(QWidget):
         self.export_button.clicked.connect(self._on_export)
         toolbar.addWidget(self.export_button)
 
-        self.record_count_label = QLabel("")
-        self.record_count_label.setObjectName("record_count_label")
-        toolbar.addWidget(self.record_count_label)
+        # CRUD gombsor — 320px-es fix widget, pontosan a detail panel fölött
+        crud_widget = QWidget()
+        crud_widget.setFixedWidth(320)
+        crud_layout = QHBoxLayout(crud_widget)
+        crud_layout.setContentsMargins(16, 0, 16, 0)
+        crud_layout.setSpacing(6)
+
+        self.add_row_button = QPushButton("Új sor")
+        self.add_row_button.setObjectName("secondary_button")
+        set_button_icon(self.add_row_button, ICON_PLUS, CLR_SECONDARY, CLR_SECONDARY_DIS)
+        self.add_row_button.setEnabled(False)
+        self.add_row_button.clicked.connect(self._on_add_row)
+        crud_layout.addWidget(self.add_row_button)
+
+        self.delete_button = QPushButton("Törlés")
+        self.delete_button.setObjectName("delete_button")
+        set_button_icon(self.delete_button, ICON_TRASH, CLR_DANGER, CLR_DANGER_DIS)
+        self.delete_button.setEnabled(False)
+        self.delete_button.clicked.connect(self._on_delete)
+        crud_layout.addWidget(self.delete_button)
+
+        self.save_button = QPushButton("Mentés")
+        set_button_icon(self.save_button, ICON_SAVE, CLR_PRIMARY, CLR_PRIMARY_DIS)
+        self.save_button.setEnabled(False)
+        self.save_button.clicked.connect(self._on_save)
+        crud_layout.addWidget(self.save_button)
+
+        crud_layout.addStretch()
+        toolbar.addWidget(crud_widget)
 
         main_layout.addLayout(toolbar)
 
@@ -161,25 +172,23 @@ class PartnerEditView(QWidget):
         self.table_view.hide()
         table_area_layout.addWidget(self.table_view)
 
+        self.record_count_label = QLabel("")
+        self.record_count_label.setObjectName("record_count_label")
+        self.record_count_label.setStyleSheet("font-size: 12px; color: #868e96; padding: 4px 0 0 2px;")
+        table_area_layout.addWidget(self.record_count_label)
+
         content_layout.addWidget(table_area, 1)
 
         # Jobb: részlet panel
         detail_panel = QFrame()
         detail_panel.setObjectName("detail_panel")
-        detail_panel.setFixedWidth(280)
+        detail_panel.setFixedWidth(320)
         detail_panel.setStyleSheet("QFrame#detail_panel { background: white; }")
         detail_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
 
         detail_layout = QVBoxLayout(detail_panel)
         detail_layout.setContentsMargins(16, 16, 16, 16)
         detail_layout.setSpacing(10)
-
-        # panel_title = QLabel("Kiválasztott partner adatai")
-        # panel_title.setObjectName("detail_panel_title")
-        # panel_title.setWordWrap(True)
-        # detail_layout.addWidget(panel_title)
-
-        # detail_layout.addSpacing(4)
 
         detail_layout.addWidget(self._make_field_label("UMS partner"))
         self.ums_partner_edit = QLineEdit()
@@ -398,8 +407,49 @@ class PartnerEditView(QWidget):
             self._prepare_query()
 
     # ------------------------------------------------------------------ #
-    #  Segédek                                                             #
+    #  UMS szinkronizálás                                                 #
     # ------------------------------------------------------------------ #
+
+    def _on_ums_sync(self):
+        reply = QMessageBox.question(
+            self,
+            "UMS szinkronizálás",
+            "Az UMS partner lista szinkronizálása beolvassa a Bank lekérdezésből\n"
+            "azokat a partnerneveket, amelyek még nem szerepelnek a listában.\n\n"
+            "Folytatod?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        self._progress_dialog = DbOperationProgressDialog()
+        self._progress_dialog.set_message("UMS szinkronizálás folyamatban...")
+        self._progress_dialog.show()
+        QTimer.singleShot(100, self._run_ums_sync)
+
+    def _run_ums_sync(self):
+        try:
+            ok, result = self._db.call_partner_insert()
+            if self._progress_dialog:
+                self._progress_dialog.accept()
+                self._progress_dialog = None
+            if ok:
+                QMessageBox.information(self, "Szinkronizálás sikeres", result)
+                self._prepare_query()
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Szinkronizálási hiba",
+                    f"Sikertelen szinkronizálás.\n\nRészletek:\n{result}",
+                )
+        except Exception as e:
+            if self._progress_dialog:
+                self._progress_dialog.accept()
+                self._progress_dialog = None
+            QMessageBox.critical(
+                self, "Szinkronizálási hiba", f"Sikertelen szinkronizálás.\n\nRészletek:\n{e}"
+            )
 
     # ------------------------------------------------------------------ #
     #  Export (C3)                                                        #
@@ -414,7 +464,7 @@ class PartnerEditView(QWidget):
     def _run_export(self):
         try:
             df = self._db.query_partner_mapping()
-            df_export = df.drop(columns=["ID"], errors="ignore").rename(columns=_COL_MAP)
+            df_export = df.rename(columns={"ID": "ID", **_COL_MAP})
             exports_dir = os.path.join(_APP_ROOT, "exports")
             os.makedirs(exports_dir, exist_ok=True)
             filename = f"partnerek_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.xlsx"
@@ -458,9 +508,7 @@ class PartnerEditView(QWidget):
                 )
                 return
 
-            df_export = missing.drop(columns=["ID"], errors="ignore").rename(
-                columns=_COL_MAP
-            )
+            df_export = missing.rename(columns={"ID": "ID", **_COL_MAP})
             exports_dir = os.path.join(_APP_ROOT, "exports")
             os.makedirs(exports_dir, exist_ok=True)
             filename = f"partnerek_ures_combosoft_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.xlsx"
