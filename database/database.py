@@ -20,7 +20,8 @@ class DatabaseManager:
     def raw_connect(self):
         conn_str = (
             f"Driver={{ODBC Driver 17 for SQL Server}};"
-            f"Server=tcp:{self.server};"
+            # f"Server=tcp:{self.server};"  # tcp: prefix named instance-nél nem működik
+            f"Server={self.server};"
             f"Database={self.database};"
             f"Uid={self.username};Pwd={self.password};"
             f"Encrypt=no;TrustServerCertificate=yes;Connection Timeout={self.timeout};"
@@ -38,7 +39,8 @@ class DatabaseManager:
     def connect(self):
         conn_str = (
             f"Driver={{ODBC Driver 17 for SQL Server}};"
-            f"Server=tcp:{self.server};"
+            # f"Server=tcp:{self.server};"  # tcp: prefix named instance-nél nem működik
+            f"Server={self.server};"
             f"Database={self.database};"
             f"Uid={self.username};Pwd={self.password};"
             f"Encrypt=no;TrustServerCertificate=yes;Connection Timeout={self.timeout};"
@@ -427,6 +429,116 @@ class DatabaseManager:
         except Exception as e:
             raise RuntimeError(f"Hiba a lekérdezés során: {e}")
 
+    def delete_partner(self, id: int):
+        """Partner sor törlése ID alapján (dbo.Partner_mapping)."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM dbo.Partner_mapping WHERE ID=?", (id,))
+            conn.commit()
+            conn.close()
+            return True, "Partner sikeresen törölve."
+        except Exception as e:
+            return False, str(e)
+
+    def insert_partner(self, ums_partner: str, combosoft_partner: str):
+        """Új partner sor INSERT-je (dbo.Partner_mapping)."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO dbo.Partner_mapping (UMS_parnter, Combosoft_partner) "
+                "VALUES (?, ?)",
+                (ums_partner, combosoft_partner),
+            )
+            conn.commit()
+            conn.close()
+            return True, "Partner sikeresen hozzáadva."
+        except Exception as e:
+            return False, str(e)
+
+    def update_partner(self, id: int, ums_partner: str, combosoft_partner: str):
+        """Meglévő partner sor UPDATE-je ID alapján (dbo.Partner_mapping)."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE dbo.Partner_mapping "
+                "SET UMS_parnter=?, Combosoft_partner=? "
+                "WHERE ID=?",
+                (ums_partner, combosoft_partner, id),
+            )
+            conn.commit()
+            conn.close()
+            return True, "Partner adatai sikeresen frissítve."
+        except Exception as e:
+            return False, str(e)
+
+    def delete_bank_account(self, id: int):
+        """Bankszámlaszám sor törlése ID alapján (dbo.Bankszamlaszam_torzs)."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM dbo.Bankszamlaszam_torzs WHERE ID=?", (id,)
+            )
+            conn.commit()
+            conn.close()
+            return True, "Bankszámlaszám sikeresen törölve."
+        except Exception as e:
+            return False, str(e)
+
+    def insert_bank_account(
+        self,
+        bankszamlaszam: str,
+        fokonyv: str,
+        deviza: str,
+        tipus: str,
+        partner: str,
+    ):
+        """Új bankszámlaszám sor INSERT-je a Bankszamlaszam_torzs táblába."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO dbo.Bankszamlaszam_torzs "
+                "(Bankszamlaszam, Bankszamlaszam_fokonyv, Bankszamlaszam_deviza, "
+                "Bankszamlaszam_tipus, Partner) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (bankszamlaszam, fokonyv, deviza, tipus, partner),
+            )
+            conn.commit()
+            conn.close()
+            return True, "Bankszámlaszám sikeresen hozzáadva."
+        except Exception as e:
+            return False, str(e)
+
+    def update_bank_account(
+        self,
+        id: int,
+        bankszamlaszam: str,
+        fokonyv: str,
+        deviza: str,
+        tipus: str,
+        partner: str,
+    ):
+        """Meglévő bankszámlaszám sor UPDATE-je ID alapján."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE dbo.Bankszamlaszam_torzs "
+                "SET Bankszamlaszam=?, Bankszamlaszam_fokonyv=?, "
+                "Bankszamlaszam_deviza=?, Bankszamlaszam_tipus=?, Partner=? "
+                "WHERE ID=?",
+                (bankszamlaszam, fokonyv, deviza, tipus, partner, id),
+            )
+            conn.commit()
+            conn.close()
+            return True, "Bankszámlaszám adatai sikeresen frissítve."
+        except Exception as e:
+            return False, str(e)
+
     def insert_bank_account_number_rows_bulk(self, df):
         if df.empty:
             return False, "Nincs adat a mentéshez."
@@ -464,6 +576,53 @@ class DatabaseManager:
 
         except Exception as e:
             return False, f"Hiba a mentés során: {e}"
+
+    def delete_bank_internal_code(self, id: int):
+        """Bank belső kód sor törlése ID alapján (dbo.Bank_belsokod)."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM dbo.Bank_belsokod WHERE ID=?", (id,))
+            conn.commit()
+            conn.close()
+            return True, "Belső kód sikeresen törölve."
+        except Exception as e:
+            return False, str(e)
+
+    def insert_bank_internal_code(self, belsokod: str, fokony: str, fokonyvtext: str):
+        """Új belső kód sor INSERT-je (dbo.Bank_belsokod)."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO dbo.Bank_belsokod (Belsokod, Fokony, FokonyvText) "
+                "VALUES (?, ?, ?)",
+                (belsokod, fokony, fokonyvtext),
+            )
+            conn.commit()
+            conn.close()
+            return True, "Belső kód sikeresen hozzáadva."
+        except Exception as e:
+            return False, str(e)
+
+    def update_bank_internal_code(
+        self, id: int, belsokod: str, fokony: str, fokonyvtext: str
+    ):
+        """Meglévő belső kód sor UPDATE-je ID alapján (dbo.Bank_belsokod)."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE dbo.Bank_belsokod "
+                "SET Belsokod=?, Fokony=?, FokonyvText=? "
+                "WHERE ID=?",
+                (belsokod, fokony, fokonyvtext, id),
+            )
+            conn.commit()
+            conn.close()
+            return True, "Belső kód adatai sikeresen frissítve."
+        except Exception as e:
+            return False, str(e)
 
     def insert_bank_internal_code_rows_bulk(self, df):
         if df.empty:

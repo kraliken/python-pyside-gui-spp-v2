@@ -50,13 +50,13 @@ class BankQueryView(QWidget):
         set_button_icon(self.query_button, ICON_SEARCH, CLR_PRIMARY, CLR_PRIMARY_DIS)
         control_panel_layout.addWidget(self.query_button)
 
-        self.hist_date_edit = QDateEdit()
-        self.hist_date_edit.setDisplayFormat("yyyy. MM. dd.")
-        self.hist_date_edit.setCalendarPopup(True)
-        self.hist_date_edit.setDate(QDate.currentDate())
-        self.hist_date_edit.setFixedWidth(158)
-        self.hist_date_edit.setEnabled(False)
-        control_panel_layout.addWidget(self.hist_date_edit, alignment=Qt.AlignVCenter)
+        # self.hist_date_edit = QDateEdit()
+        # self.hist_date_edit.setDisplayFormat("yyyy. MM. dd.")
+        # self.hist_date_edit.setCalendarPopup(True)
+        # self.hist_date_edit.setDate(QDate.currentDate())
+        # self.hist_date_edit.setFixedWidth(158)
+        # self.hist_date_edit.setEnabled(False)
+        # control_panel_layout.addWidget(self.hist_date_edit, alignment=Qt.AlignVCenter)
 
         self.save_to_bank_hist_table_button = QPushButton("Mentés history-ba")
         self.save_to_bank_hist_table_button.setObjectName("secondary_button")
@@ -218,7 +218,7 @@ class BankQueryView(QWidget):
 
     def perform_save_to_irems_hist_table(self):
         date_str = self.hist_date_edit.date().toString("yyyy-MM-dd")
-        success, message = self.db.call_bank_insert1(date_str)
+        success, message = self.db.call_bank_insert1()
 
         if self.progress_dialog:
             self.progress_dialog.accept()
