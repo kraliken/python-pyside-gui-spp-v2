@@ -1,6 +1,12 @@
 # ui/icons.py
 #
 # Közös SVG ikon helper — Feather Icons stílusú outline ikonok.
+#
+# Az alkalmazás minden ikonja SVG formátumú (Scalable Vector Graphics = vektorgrafika).
+# Az SVG-k szövegként vannak tárolva, és a `{c}` helyőrzőt (placeholder) a kívánt
+# színre cseréljük futásidőben — így ugyanabból az ikonból több színváltozat készíthető
+# (pl. fehér az aktív gombhoz, szürke a tiltotthoz).
+#
 # Használat: set_button_icon(btn, ICON_SEARCH, CLR_PRIMARY, CLR_PRIMARY_DIS)
 
 from PySide6.QtCore import QByteArray, QSize, Qt
@@ -9,6 +15,10 @@ from PySide6.QtSvg import QSvgRenderer
 
 # ------------------------------------------------------------------ #
 #  Gomb ikon színek — QSS-sel szinkronban
+#
+#  Minden gombstílushoz két szín van megadva:
+#    normál   — aktív, kattintható gomb ikonjának színe
+#    disabled — tiltott (disabled) gomb ikonjának halvány színe
 # ------------------------------------------------------------------ #
 
 CLR_PRIMARY      = "white"     # kék (primary) gomb — normál
@@ -22,8 +32,12 @@ CLR_DANGER_DIS  = "#ffa8a8"    # piros keret (delete/clear) gomb — disabled
 
 # ------------------------------------------------------------------ #
 #  SVG stringek
+#
+#  Minden ikon egy SVG szöveg, amelyben `{c}` jelöli a szín helyét.
+#  A _make_pixmap() függvény futáskor behelyettesíti a tényleges színt.
 # ------------------------------------------------------------------ #
 
+# Feltöltés ikon (nyíl felfelé, alap vízszintes vonallal)
 ICON_UPLOAD = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="{c}" stroke-width="2"
@@ -34,6 +48,7 @@ ICON_UPLOAD = """
 </svg>
 """
 
+# Keresés ikon (nagyítóüveg)
 ICON_SEARCH = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="{c}" stroke-width="2"
@@ -43,6 +58,7 @@ ICON_SEARCH = """
 </svg>
 """
 
+# Előzmény ikon (körben forgó nyíl + óramutató)
 ICON_HISTORY = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="{c}" stroke-width="2"
@@ -53,6 +69,7 @@ ICON_HISTORY = """
 </svg>
 """
 
+# Kuka (törlés) ikon
 ICON_TRASH = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="{c}" stroke-width="2"
@@ -65,6 +82,7 @@ ICON_TRASH = """
 </svg>
 """
 
+# Mentés ikon (floppy disk)
 ICON_SAVE = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="{c}" stroke-width="2"
@@ -75,6 +93,7 @@ ICON_SAVE = """
 </svg>
 """
 
+# Pipa kör (sikeres művelet) ikon
 ICON_CHECK_CIRCLE = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="{c}" stroke-width="2"
@@ -84,6 +103,7 @@ ICON_CHECK_CIRCLE = """
 </svg>
 """
 
+# Letöltés ikon (nyíl lefelé, alap vízszintes vonallal)
 ICON_DOWNLOAD = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="{c}" stroke-width="2"
@@ -94,6 +114,7 @@ ICON_DOWNLOAD = """
 </svg>
 """
 
+# Plusz ikon (új elem hozzáadása)
 ICON_PLUS = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="{c}" stroke-width="2"
@@ -103,6 +124,7 @@ ICON_PLUS = """
 </svg>
 """
 
+# Szerkesztés ikon (ceruza)
 ICON_EDIT = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="{c}" stroke-width="2"
@@ -113,14 +135,23 @@ ICON_EDIT = """
 """
 
 # ------------------------------------------------------------------ #
-#  Helper
+#  Helper függvények
 # ------------------------------------------------------------------ #
 
 def _make_pixmap(svg_template: str, size: int, color: str) -> QPixmap:
+    """SVG szövegből Qt képet (QPixmap) készít, adott méretben és színben.
+
+    Lépések:
+      1. Behelyettesíti a `{c}` helyőrzőt a kívánt színre az SVG szövegben
+      2. A szöveget bájttömbbé (QByteArray) alakítja, mert a Qt így várja
+      3. QSvgRenderer: értelmezi az SVG-t
+      4. QPixmap: üres, átlátszó képet hoz létre (size x size pixel)
+      5. QPainter: rárajzolja az SVG-t a pixmapra
+    """
     data = QByteArray(svg_template.replace("{c}", color).encode("utf-8"))
     renderer = QSvgRenderer(data)
     pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.transparent)
+    pixmap.fill(Qt.transparent)   # átlátszó háttér, hogy az ikon ne legyen téglalapban
     painter = QPainter(pixmap)
     renderer.render(painter)
     painter.end()
@@ -135,13 +166,18 @@ def make_icon(
 ) -> QIcon:
     """SVG string → multi-state QIcon.
 
+    A QIcon több "állapotot" (state) tud tárolni — normál és disabled.
     Ha disabled_color meg van adva, a QIcon.Mode.Disabled állapothoz
     külön pixmap kerül — így a disabled gomb ikonja illeszkedik a
     szöveg halfaded színéhez.
+
+    Ha disabled_color nincs megadva, a Qt automatikusan fakulttá teszi az ikont.
     """
     icon = QIcon()
+    # Normál állapot: aktív gomb ikonja
     icon.addPixmap(_make_pixmap(svg_template, size, color), QIcon.Mode.Normal)
     if disabled_color:
+        # Disabled állapot: tiltott gomb ikonja (halvány szín)
         icon.addPixmap(
             _make_pixmap(svg_template, size, disabled_color), QIcon.Mode.Disabled
         )
@@ -159,6 +195,9 @@ def set_button_icon(
 
     color          — normál állapot ikon színe
     disabled_color — disabled állapot ikon színe (None → Qt auto-fade)
+
+    A `"  "` (két szóköz) a gomb szövege elé kerül, hogy az ikon és a szöveg
+    között vizuális rés legyen — Qt-ban az ikon és szöveg egyébként túl közel kerülne.
     """
     button.setIcon(make_icon(svg_template, size, color, disabled_color))
     button.setIconSize(QSize(size, size))

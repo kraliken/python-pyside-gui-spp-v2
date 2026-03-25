@@ -1,23 +1,67 @@
-import pyodbc
-import pandas as pd
-from dotenv import load_dotenv
+# database/database.py
+#
+# DatabaseManager — Az összes SQL Server adatbázis-művelet egy helyen.
+#
+# Ez az osztály felelős minden adatbázis-kommunikációért:
+#   - Kapcsolatok kezelése (pyodbc raw + SQLAlchemy engine)
+#   - SELECT lekérdezések pandas DataFrame-ként
+#   - INSERT (bulk) a staging táblákba
+#   - DELETE a staging táblákból
+#   - Tárolt eljárások hívása (CALL)
+#   - CRUD műveletek a törzsadattáblákhoz (bankszámlaszám, belső kód, partner)
+#
+# Két kapcsolat típus:
+#   raw_connect() → pyodbc.Connection: direkt SQL, DELETE, CALL, egyedi INSERT
+#   connect()     → SQLAlchemy Engine: pandas read_sql() kompatibilis, bulk INSERT
+#
+# Kapcsolat adatok: .env fájlból töltődnek be (python-dotenv)
+# .env szükséges mezők: DB_USERNAME, DB_PASSWORD, DB_SERVER, DB_DATABASE
+
+import pyodbc     # Microsoft SQL Server ODBC kapcsolat (ODBC Driver 17 szükséges)
+import pandas as pd  # SELECT eredmények DataFrame formában
+from dotenv import load_dotenv  # .env fájl betöltése (jelszavak, kapcsolati adatok)
 import os
-from sqlalchemy import create_engine
-from sqlalchemy import text
-import urllib
+from sqlalchemy import create_engine  # SQLAlchemy engine (pandas read_sql()-hoz)
+from sqlalchemy import text           # (importálva, de jelenleg nem használt direkten)
+import urllib                         # Connection string URL-kódoláshoz (SQLAlchemy-hoz)
 
 
 class DatabaseManager:
-    def __init__(self, timeout: int = 30):
-        load_dotenv()
+    """SQL Server adatbázis-kezelő osztály.
 
+    Minden SQL Server művelet ezen az osztályon keresztül zajlik.
+    Minden nézet saját példányt hoz létre belőle (__init__-ben: self.db = DatabaseManager()).
+    """
+
+    def __init__(self, timeout: int = 30):
+        """Kapcsolati adatok betöltése a .env fájlból.
+
+        Args:
+            timeout: kapcsolódási időtúllépés másodpercben (alapértelmezett: 30)
+        """
+        load_dotenv()  # .env fájl betöltése a munkakönyvtárból (vagy szülő könyvtárból)
+
+        # Környezeti változók olvasása (None, ha nincs megadva)
         self.username = os.getenv("DB_USERNAME")
         self.password = os.getenv("DB_PASSWORD")
-        self.server = os.getenv("DB_SERVER")
-        self.database = os.getenv("DB_DATABASE")
+        self.server = os.getenv("DB_SERVER")       # pl. "172.16.0.16\Maxoft"
+        self.database = os.getenv("DB_DATABASE")   # pl. "Developer_db"
         self.timeout = timeout
 
     def raw_connect(self):
+        """Közvetlen pyodbc kapcsolat létrehozása az SQL Serverhez.
+
+        Mikor használjuk: DELETE, egyedi INSERT, tárolt eljárás (CALL), CRUD.
+        A pyodbc kapcsolat közvetlenül kommunikál az ODBC driverrel — gyorsabb,
+        és lehetővé teszi a fast_executemany optimalizációt bulk INSERT-nél.
+
+        Returns:
+            pyodbc.Connection: aktív DB kapcsolat
+
+        Raises:
+            ValueError: ha a bejelentkezési adatok hibásak
+            ConnectionError: egyéb kapcsolódási hiba esetén
+        """
         conn_str = (
             f"Driver={{ODBC Driver 17 for SQL Server}};"
             # f"Server=tcp:{self.server};"  # tcp: prefix named instance-nél nem működik
@@ -37,9 +81,24 @@ class DatabaseManager:
                 raise ConnectionError(f"Adatbázis hiba: {e}")
 
     def connect(self):
+        """SQLAlchemy engine létrehozása az SQL Serverhez.
+
+        Mikor használjuk: SELECT lekérdezések pd.read_sql()-lel.
+        A pandas read_sql() SQLAlchemy engine-t vagy Connection-t vár —
+        a pyodbc kapcsolat közvetlenül nem kompatibilis ezzel a pandas API-val.
+
+        A connection string URL-kódolással kerül át az SQLAlchemy-nak:
+        urllib.parse.quote_plus() a pontosvesszőket és speciális karaktereket kódolja.
+
+        Returns:
+            sqlalchemy.Engine: konfigurált motor (nem aktív kapcsolat!)
+
+        Raises:
+            ConnectionError: ha az engine létrehozása sikertelen
+        """
         conn_str = (
             f"Driver={{ODBC Driver 17 for SQL Server}};"
-            # f"Server=tcp:{self.server};"  # tcp: prefix named instance-nél nem működik
+            # f"Server=tcp:{self.server};"
             f"Server={self.server};"
             f"Database={self.database};"
             f"Uid={self.username};Pwd={self.password};"
@@ -47,12 +106,14 @@ class DatabaseManager:
         )
 
         try:
+            # Az ODBC connection string URL-kódolva átadása az SQLAlchemy-nak
             quoted_conn_str = urllib.parse.quote_plus(conn_str)
             engine = create_engine(f"mssql+pyodbc:///?odbc_connect={quoted_conn_str}")
             return engine
         except Exception as e:
             raise ConnectionError(f"SQLAlchemy engine létrehozása sikertelen: {e}")
 
+        # Régi pyodbc közvetlen mód (kikommentelve, SQLAlchemy váltotta fel):
         # try:
         # return pyodbc.connect(conn_str)
         # except pyodbc.Error as e:
@@ -61,6 +122,10 @@ class DatabaseManager:
         # raise ValueError("Hibás jelszó.")
         # else:
         # raise ConnectionError(f"Adatbázis hiba: {e}")
+
+    # =========================================================================
+    # Kezdőlap statisztika
+    # =========================================================================
 
     def query_stage_counts(self) -> dict:
         """Bank/Szállító/Vevő staging táblák sorainak száma egyetlen lekérdezésben.
@@ -71,7 +136,7 @@ class DatabaseManager:
         Returns:
             {"bank": int, "vendor": int, "customer": int}
             Kapcsolati hiba esetén mindhárom érték -1
-            (a HomeView ezt „—" jelként jeleníti meg).
+            (a HomeView ezt "—" jelként jeleníti meg).
 
         Megjegyzés: A HomeView jelenleg hardcoded értékeket használ fejlesztési
         célból. Ez a metódus éles gépen aktiválható — lásd home_view.py
@@ -80,6 +145,7 @@ class DatabaseManager:
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
+            # Egyetlen SELECT-tel lekérdezi mindhárom tábla sorszámát
             cursor.execute(
                 "SELECT "
                 "(SELECT COUNT(*) FROM dbo.Bank_stage)          AS bank,   "
@@ -92,8 +158,15 @@ class DatabaseManager:
         except Exception:
             return {"bank": -1, "vendor": -1, "customer": -1}
 
-    def query_bank_data(self):
+    # =========================================================================
+    # Bank staging tábla (dbo.Bank_stage — 38 oszlop)
+    # =========================================================================
 
+    def query_bank_data(self):
+        """Bank staging tábla összes sorának lekérdezése DataFrame-ként.
+
+        SQLAlchemy engine-t használ (pandas read_sql() kompatibilitás miatt).
+        """
         try:
             engine = self.connect()
             with engine.connect() as conn:
@@ -102,6 +175,7 @@ class DatabaseManager:
         except Exception as e:
             raise RuntimeError(f"Hiba a lekérdezés során: {e}")
 
+        # Régi közvetlen pyodbc mód (kikommentelve):
         # try:
         # conn = self.connect()
         # df = pd.read_sql("SELECT * FROM dbo.Bank_stage", conn)
@@ -111,7 +185,11 @@ class DatabaseManager:
         # raise RuntimeError(f"Hiba a lekérdezés során: {e}")
 
     def delete_bank_stage(self):
+        """Bank staging tábla teljes tartalmának törlése.
 
+        Returns:
+            (True, üzenet) siker esetén, (False, hibaüzenet) hiba esetén
+        """
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
@@ -123,6 +201,17 @@ class DatabaseManager:
             return False, str(e)
 
     def insert_bank_rows_bulk(self, df):
+        """Bank staging táblába tömeges INSERT (bulk insert).
+
+        Optimalizáció: cursor.fast_executemany = True — a pyodbc egyszerre
+        elküldi az összes sort a szervernek (nem egyenként), ami ~10-100x gyorsabb.
+
+        Args:
+            df: pandas DataFrame 38 oszloppal (Column1..Column38)
+
+        A DataFrame sorait tuple listává alakítja, ahol minden elem string (vagy üres string).
+        None értékek helyett üres string kerül (SQL Server VARCHAR kompatibilitás).
+        """
         if df.empty:
             return False, "Nincs adat a mentéshez."
 
@@ -130,10 +219,10 @@ class DatabaseManager:
             with self.raw_connect() as conn:
                 cursor = conn.cursor()
 
-                # Fontos: pyodbc gyorsítás
+                # fast_executemany: bulk optimalizáció — az összes sor egy hálózati kérésben
                 cursor.fast_executemany = True
 
-                # Minden sort tuple-ként előkészítünk (38 elem)
+                # DataFrame sorok → tuple lista (38 elem/sor)
                 values = [
                     tuple(
                         str(row.iloc[i]) if pd.notna(row.iloc[i]) else ""
@@ -142,7 +231,7 @@ class DatabaseManager:
                     for _, row in df.iterrows()
                 ]
 
-                # Paraméterként a TVP átadása
+                # 38 paraméterhelyes INSERT (? = pyodbc paraméter-jelölő)
                 cursor.executemany(
                     "INSERT INTO dbo.Bank_stage VALUES (" + ",".join(["?"] * 38) + ")",
                     values,
@@ -154,41 +243,16 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Hiba a mentés során: {e}"
 
+    # Tárolt eljárásos INSERT — régi megközelítés (kikommentelve):
     # def insert_rows_with_procedure(self, df, procedure="dbo.bank_insert_v1"):
-    #     if df.empty:
-    #         return False, "Nincs adat a mentéshez."
+    #     ...
 
-    #     try:
-    #         with self.connect() as conn:
-    #             cursor = conn.cursor()
-
-    #             placeholders = ",".join(["?"] * 38)
-    #             sql = f"EXEC {procedure} {placeholders}"
-
-    #             for index, row in df.iterrows():
-    #                 try:
-    #                     values = [
-    #                         str(row[i]) if pd.notna(row[i]) else "" for i in range(38)
-    #                     ]
-    #                     cursor.execute(sql, values)
-    #                 except Exception as row_error:
-    #                     return (
-    #                         False,
-    #                         f"Hiba a(z) {index + 1}. sor mentése közben:\n{row_error}",
-    #                     )
-
-    #             conn.commit()
-    #             return True, "Sikeres feltöltés a tárolt eljáráson keresztül."
-
-    #     except ValueError as ve:
-    #         return False, str(ve)
-    #     except ConnectionError as ce:
-    #         return False, str(ce)
-    #     except Exception as e:
-    #         return False, f"Általános hiba a mentés során: {e}"
+    # =========================================================================
+    # Szállítói staging tábla (dbo.IremsSzallito_stage — 9 oszlop)
+    # =========================================================================
 
     def query_vendor_data(self):
-
+        """Szállítói staging tábla lekérdezése DataFrame-ként."""
         try:
             engine = self.connect()
             with engine.connect() as conn:
@@ -197,15 +261,8 @@ class DatabaseManager:
         except Exception as e:
             raise RuntimeError(f"Hiba a lekérdezés során: {e}")
 
-        # try:
-        # conn = self.connect()
-        # df = pd.read_sql("SELECT * FROM dbo.IremsSzallito_stage", conn)
-        # conn.close()
-        # return df
-        # except Exception as e:
-        # raise RuntimeError(f"Hiba a lekérdezés során: {e}")
-
     def delete_vendor_stage(self):
+        """Szállítói staging tábla teljes törlése."""
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
@@ -217,29 +274,30 @@ class DatabaseManager:
             return False, str(e)
 
     def insert_vendor_rows_bulk(self, df):
+        """Szállítói staging táblába tömeges INSERT (9 oszlop).
+
+        Különbség a banki bulk insert-hez képest:
+          - Csak 9 oszlop (nem 38)
+          - None értékeket megtartja (pd.isna check: None → SQL NULL)
+            A szállítói táblában engedélyezett a NULL (ellentétben a banki VARCHAR mezőkkel)
+        """
         if df.empty:
             return False, "Nincs adat a mentéshez."
 
         try:
             with self.raw_connect() as conn:
                 cursor = conn.cursor()
-
-                # Fontos: pyodbc gyorsítás
                 cursor.fast_executemany = True
 
-                # Minden sort tuple-ként előkészítünk (38 elem)
+                # None ha NaN (SQL NULL), str ha van érték
                 values = [
                     tuple(
-                        # str(row.iloc[i]) if pd.notna(row.iloc[i]) else ""
                         None if pd.isna(row.iloc[i]) else str(row.iloc[i])
                         for i in range(9)
                     )
                     for _, row in df.iterrows()
                 ]
 
-                # print(values)
-
-                # Paraméterként a TVP átadása
                 cursor.executemany(
                     "INSERT INTO dbo.IremsSzallito_stage VALUES ("
                     + ",".join(["?"] * 9)
@@ -247,21 +305,18 @@ class DatabaseManager:
                     values,
                 )
 
-                # # Explicit módon megadjuk az oszlopneveket, kihagyva az ID-t, ami valószínűleg automatikusan generált
-                # cursor.executemany(
-                #     "INSERT INTO dbo.IremsSzallito_stage (Column1, Column2, Column3, Column4, Column5, Column6, Column7, Column8, Column9) VALUES ("
-                #     + ",".join(["?"] * 9)
-                #     + ")",
-                #     values,
-                # )
-
                 conn.commit()
                 return True, "Adatok mentve az adatbázisba."
 
         except Exception as e:
             return False, f"Hiba a mentés során: {e}"
 
+    # =========================================================================
+    # Vevői staging tábla (dbo.IremsVevo_stage — 9 oszlop)
+    # =========================================================================
+
     def query_customer_data(self):
+        """Vevői staging tábla lekérdezése DataFrame-ként."""
         try:
             engine = self.connect()
             with engine.connect() as conn:
@@ -270,15 +325,8 @@ class DatabaseManager:
         except Exception as e:
             raise RuntimeError(f"Hiba a lekérdezés során: {e}")
 
-        # try:
-        # conn = self.connect()
-        # df = pd.read_sql("SELECT * FROM dbo.IremsVevo_stage", conn)
-        # conn.close()
-        # return df
-        # except Exception as e:
-        # raise RuntimeError(f"Hiba a lekérdezés során: {e}")
-
     def delete_customer_stage(self):
+        """Vevői staging tábla teljes törlése."""
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
@@ -290,27 +338,26 @@ class DatabaseManager:
             return False, str(e)
 
     def insert_customer_rows_bulk(self, df):
+        """Vevői staging táblába tömeges INSERT (9 oszlop).
+
+        A szállítói bulk inserttel azonos logika — None → SQL NULL megtartva.
+        """
         if df.empty:
             return False, "Nincs adat a mentéshez."
 
         try:
             with self.raw_connect() as conn:
                 cursor = conn.cursor()
-
-                # Fontos: pyodbc gyorsítás
                 cursor.fast_executemany = True
 
-                # Minden sort tuple-ként előkészítünk (38 elem)
                 values = [
                     tuple(
-                        # str(row.iloc[i]) if pd.notna(row.iloc[i]) else ""
                         None if pd.isna(row.iloc[i]) else str(row.iloc[i])
                         for i in range(9)
                     )
                     for _, row in df.iterrows()
                 ]
 
-                # Paraméterként a TVP átadása
                 cursor.executemany(
                     "INSERT INTO dbo.IremsVevo_stage VALUES ("
                     + ",".join(["?"] * 9)
@@ -324,16 +371,19 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Hiba a mentés során: {e}"
 
+    # =========================================================================
+    # Tárolt eljárások (staging → Hist áthelyezés)
+    # =========================================================================
+
     def call_vendor_insert1(self, date):
-        """Szállító staging → Hist tárolt eljárás hívása dátum paraméterrel.
+        """Szállítói staging → Hist tárolt eljárás hívása dátum paraméterrel.
 
         Args:
-            date: str formátumban "YYYY-MM-DD" — a könyvelési dátum, amelyet
-                  a tárolt eljárás @datum DATE paraméterként vár.
+            date: str formátumban "YYYY-MM-DD" — a könyvelési dátum,
+                  amelyet a dbo.szallito_insert1 eljárás @datum paraméterként vár.
 
-        Megjegyzés (SQL Server oldal): A dbo.szallito_insert1 tárolt eljárást
-        módosítani kell: fogadjon @datum DATE paramétert, és szűrjön/jelöljön
-        erre a dátumra a staging → Hist mozgatás során.
+        A pyodbc ODBC escape szintaxis: {CALL eljárás(?)} — ez a szabványos
+        ODBC módja a tárolt eljárás paraméteres hívásának.
         """
         try:
             conn = self.raw_connect()
@@ -342,20 +392,14 @@ class DatabaseManager:
             conn.commit()
             conn.close()
             return True, "Az IremsSzallito_Stage adatai mentve az Irems_Hist táblába."
-
         except Exception as e:
             return False, str(e)
 
     def call_customer_insert1(self, date):
-        """Vevő staging → Hist tárolt eljárás hívása dátum paraméterrel.
+        """Vevői staging → Hist tárolt eljárás hívása dátum paraméterrel.
 
         Args:
-            date: str formátumban "YYYY-MM-DD" — a könyvelési dátum, amelyet
-                  a tárolt eljárás @datum DATE paraméterként vár.
-
-        Megjegyzés (SQL Server oldal): A dbo.vevo_insert1 tárolt eljárást
-        módosítani kell: fogadjon @datum DATE paramétert, és szűrjön/jelöljön
-        erre a dátumra a staging → Hist mozgatás során.
+            date: str formátumban "YYYY-MM-DD" — a dbo.vevo_insert1 eljárás @datum paramétere.
         """
         try:
             conn = self.raw_connect()
@@ -364,30 +408,35 @@ class DatabaseManager:
             conn.commit()
             conn.close()
             return True, "Az IremsVevo_Stage adatai mentve az Irems_Hist táblába."
-
         except Exception as e:
             return False, str(e)
 
     def call_bank_insert1(self):
-        """Bank staging → Hist tárolt eljárás hívása dátum paraméterrel.
+        """Bank staging → Hist tárolt eljárás hívása (dátum paraméter nélkül).
 
-        Megjegyzés (SQL Server oldal): A dbo.bank_insert1 tárolt eljárást
-        módosítani kell: fogadjon @datum DATE paramétert, és szűrjön/jelöljön
-        erre a dátumra a staging → Hist mozgatás során.
+        Megjegyzés: a bank_insert1 eljárás jelenleg nem fogad dátum paramétert
+        (ellentétben a szállítói/vevői változattal). Jövőbeli fejlesztés során
+        érdemes egységesíteni.
         """
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
-            cursor.execute("{CALL dbo.bank_insert1}")
+            cursor.execute("{CALL dbo.bank_insert1}")  # paraméter nélküli hívás
             conn.commit()
             conn.close()
             return True, "Az Bank_Stage adatai mentve az Bank_Hist táblába."
-
         except Exception as e:
             return False, str(e)
 
+    # =========================================================================
+    # Törzsadatok — Bankszámlaszám (dbo.Bankszamlaszam_torzs)
+    # =========================================================================
+
     def query_bank_account_numbers(self) -> pd.DataFrame:
-        """Bankszámlaszám törzsadatok lekérdezése (dbo.Bankszamlaszam_torzs)."""
+        """Bankszámlaszám törzsadatok lekérdezése (ID oszloppal együtt).
+
+        Az ID oszlop a megjelenítésből el van rejtve, de a CRUD műveletekhez szükséges.
+        """
         try:
             engine = self.connect()
             with engine.connect() as conn:
@@ -401,93 +450,8 @@ class DatabaseManager:
         except Exception as e:
             raise RuntimeError(f"Hiba a lekérdezés során: {e}")
 
-    def query_bank_internal_codes(self) -> pd.DataFrame:
-        """Bank belső kód törzsadatok lekérdezése (dbo.Bank_belsokod)."""
-        try:
-            engine = self.connect()
-            with engine.connect() as conn:
-                df = pd.read_sql(
-                    "SELECT ID, Belsokod, Fokony, FokonyvText "
-                    "FROM dbo.Bank_belsokod ORDER BY ID",
-                    conn,
-                )
-            return df
-        except Exception as e:
-            raise RuntimeError(f"Hiba a lekérdezés során: {e}")
-
-    def query_partner_mapping(self) -> pd.DataFrame:
-        """Partner mapping törzsadatok lekérdezése (dbo.Partner_mapping)."""
-        try:
-            engine = self.connect()
-            with engine.connect() as conn:
-                df = pd.read_sql(
-                    "SELECT ID, UMS_parnter, Combosoft_partner "
-                    "FROM dbo.Partner_mapping ORDER BY ID",
-                    conn,
-                )
-            return df
-        except Exception as e:
-            raise RuntimeError(f"Hiba a lekérdezés során: {e}")
-
-    def delete_partner(self, id: int):
-        """Partner sor törlése ID alapján (dbo.Partner_mapping)."""
-        try:
-            conn = self.raw_connect()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM dbo.Partner_mapping WHERE ID=?", (id,))
-            conn.commit()
-            conn.close()
-            return True, "Partner sikeresen törölve."
-        except Exception as e:
-            return False, str(e)
-
-    def insert_partner(self, ums_partner: str, combosoft_partner: str):
-        """Új partner sor INSERT-je (dbo.Partner_mapping)."""
-        try:
-            conn = self.raw_connect()
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO dbo.Partner_mapping (UMS_parnter, Combosoft_partner) "
-                "VALUES (?, ?)",
-                (ums_partner, combosoft_partner),
-            )
-            conn.commit()
-            conn.close()
-            return True, "Partner sikeresen hozzáadva."
-        except Exception as e:
-            return False, str(e)
-
-    def update_partner(self, id: int, ums_partner: str, combosoft_partner: str):
-        """Meglévő partner sor UPDATE-je ID alapján (dbo.Partner_mapping)."""
-        try:
-            conn = self.raw_connect()
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE dbo.Partner_mapping "
-                "SET UMS_parnter=?, Combosoft_partner=? "
-                "WHERE ID=?",
-                (ums_partner, combosoft_partner, id),
-            )
-            conn.commit()
-            conn.close()
-            return True, "Partner adatai sikeresen frissítve."
-        except Exception as e:
-            return False, str(e)
-
-    def call_partner_insert(self):
-        """UMS partnerek beolvasása Bank_lek1-ből a Partner_mapping táblába (dbo.partnerInsert)."""
-        try:
-            conn = self.raw_connect()
-            cursor = conn.cursor()
-            cursor.execute("{CALL dbo.partnerInsert}")
-            conn.commit()
-            conn.close()
-            return True, "Az UMS partner szinkronizálás sikeresen lefutott."
-        except Exception as e:
-            return False, str(e)
-
     def delete_bank_account(self, id: int):
-        """Bankszámlaszám sor törlése ID alapján (dbo.Bankszamlaszam_torzs)."""
+        """Bankszámlaszám sor törlése ID alapján."""
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
@@ -508,7 +472,10 @@ class DatabaseManager:
         tipus: str,
         partner: str,
     ):
-        """Új bankszámlaszám sor INSERT-je a Bankszamlaszam_torzs táblába."""
+        """Új bankszámlaszám sor INSERT-je.
+
+        Az ID oszlop auto-increment — nem szerepel az INSERT-ben.
+        """
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
@@ -552,6 +519,11 @@ class DatabaseManager:
             return False, str(e)
 
     def insert_bank_account_number_rows_bulk(self, df):
+        """Bankszámlaszámok tömeges INSERT-je (bulk, az ID nélkül).
+
+        Jelenleg nem aktívan használt metódus — jövőbeli importáláshoz fenntartva.
+        A tábla ID oszlopa auto-increment, ezért nem szerepel az INSERT-ben.
+        """
         if df.empty:
             return False, "Nincs adat a mentéshez."
 
@@ -573,7 +545,7 @@ class DatabaseManager:
                     for _, row in df.iterrows()
                 ]
 
-                # A tábla ID oszlopa auto-increment, ezért nem szerepel az insert-ben
+                # ID oszlop kihagyva (auto-increment)
                 cursor.executemany(
                     """
                     INSERT INTO dbo.Bankszamlaszam_torzs
@@ -589,8 +561,26 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Hiba a mentés során: {e}"
 
+    # =========================================================================
+    # Törzsadatok — Bank belső kód (dbo.Bank_belsokod)
+    # =========================================================================
+
+    def query_bank_internal_codes(self) -> pd.DataFrame:
+        """Bank belső kód törzsadatok lekérdezése (ID oszloppal)."""
+        try:
+            engine = self.connect()
+            with engine.connect() as conn:
+                df = pd.read_sql(
+                    "SELECT ID, Belsokod, Fokony, FokonyvText "
+                    "FROM dbo.Bank_belsokod ORDER BY ID",
+                    conn,
+                )
+            return df
+        except Exception as e:
+            raise RuntimeError(f"Hiba a lekérdezés során: {e}")
+
     def delete_bank_internal_code(self, id: int):
-        """Bank belső kód sor törlése ID alapján (dbo.Bank_belsokod)."""
+        """Bank belső kód sor törlése ID alapján."""
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
@@ -602,7 +592,7 @@ class DatabaseManager:
             return False, str(e)
 
     def insert_bank_internal_code(self, belsokod: str, fokony: str, fokonyvtext: str):
-        """Új belső kód sor INSERT-je (dbo.Bank_belsokod)."""
+        """Új belső kód sor INSERT-je."""
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
@@ -620,7 +610,7 @@ class DatabaseManager:
     def update_bank_internal_code(
         self, id: int, belsokod: str, fokony: str, fokonyvtext: str
     ):
-        """Meglévő belső kód sor UPDATE-je ID alapján (dbo.Bank_belsokod)."""
+        """Meglévő belső kód sor UPDATE-je ID alapján."""
         try:
             conn = self.raw_connect()
             cursor = conn.cursor()
@@ -637,6 +627,7 @@ class DatabaseManager:
             return False, str(e)
 
     def insert_bank_internal_code_rows_bulk(self, df):
+        """Bank belső kódok tömeges INSERT-je (bulk, jelenleg nem aktívan használt)."""
         if df.empty:
             return False, "Nincs adat a mentéshez."
 
@@ -657,7 +648,7 @@ class DatabaseManager:
                     for _, row in df.iterrows()
                 ]
 
-                # A tábla ID oszlopa auto-increment, ezért nem szerepel az insert-ben
+                # ID oszlop kihagyva (auto-increment)
                 cursor.executemany(
                     """
                     INSERT INTO dbo.Bank_belsokod
@@ -673,22 +664,89 @@ class DatabaseManager:
         except Exception as e:
             return False, f"Hiba a mentés során: {e}"
 
-    # def insert_rows_with_procedure(self, df, password, procedure="dbo.bank_insert_v1"):
-    #     conn = None
-    #     try:
-    #         conn = self.connect(password)
-    #         cursor = conn.cursor()
+    # =========================================================================
+    # Törzsadatok — Partner mapping (dbo.Partner_mapping)
+    # =========================================================================
 
-    #         for index, row in df.iterrows():
-    #             values = [str(row[i]) if pd.notna(row[i]) else "" for i in range(38)]
-    #             placeholders = ",".join(["?"] * 38)
-    #             sql = f"EXEC {procedure} {placeholders}"
-    #             cursor.execute(sql, values)
+    def query_partner_mapping(self) -> pd.DataFrame:
+        """Partner mapping törzsadatok lekérdezése (ID oszloppal).
 
-    #         conn.commit()
-    #         return True, "Sikeres feltöltés a tárolt eljáráson keresztül."
-    #     except Exception as e:
-    #         return False, f"Hiba a feltöltés során: {e}"
-    #     finally:
-    #         if conn:
-    #             conn.close()
+        Megjegyzés: az adatbázisban az oszlop neve "UMS_parnter" (typo!),
+        ezt a nézetek _COL_MAP segítségével "UMS partner"-re fordítják.
+        """
+        try:
+            engine = self.connect()
+            with engine.connect() as conn:
+                df = pd.read_sql(
+                    "SELECT ID, UMS_parnter, Combosoft_partner "
+                    "FROM dbo.Partner_mapping ORDER BY ID",
+                    conn,
+                )
+            return df
+        except Exception as e:
+            raise RuntimeError(f"Hiba a lekérdezés során: {e}")
+
+    def delete_partner(self, id: int):
+        """Partner sor törlése ID alapján."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM dbo.Partner_mapping WHERE ID=?", (id,))
+            conn.commit()
+            conn.close()
+            return True, "Partner sikeresen törölve."
+        except Exception as e:
+            return False, str(e)
+
+    def insert_partner(self, ums_partner: str, combosoft_partner: str):
+        """Új partner sor INSERT-je.
+
+        Megjegyzés: az oszlopnév "UMS_parnter" (typo az adatbázisban).
+        """
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO dbo.Partner_mapping (UMS_parnter, Combosoft_partner) "
+                "VALUES (?, ?)",
+                (ums_partner, combosoft_partner),
+            )
+            conn.commit()
+            conn.close()
+            return True, "Partner sikeresen hozzáadva."
+        except Exception as e:
+            return False, str(e)
+
+    def update_partner(self, id: int, ums_partner: str, combosoft_partner: str):
+        """Meglévő partner sor UPDATE-je ID alapján."""
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE dbo.Partner_mapping "
+                "SET UMS_parnter=?, Combosoft_partner=? "
+                "WHERE ID=?",
+                (ums_partner, combosoft_partner, id),
+            )
+            conn.commit()
+            conn.close()
+            return True, "Partner adatai sikeresen frissítve."
+        except Exception as e:
+            return False, str(e)
+
+    def call_partner_insert(self):
+        """UMS partnerek szinkronizálása: dbo.partnerInsert tárolt eljárás hívása.
+
+        Az eljárás a Bank_lek1 nézetből (importált banki adatok) beolvassa
+        az ismeretlen partnerneveket és beilleszti a Partner_mapping táblába.
+        Csak az még nem szereplő neveket adja hozzá.
+        """
+        try:
+            conn = self.raw_connect()
+            cursor = conn.cursor()
+            cursor.execute("{CALL dbo.partnerInsert}")
+            conn.commit()
+            conn.close()
+            return True, "Az UMS partner szinkronizálás sikeresen lefutott."
+        except Exception as e:
+            return False, str(e)

@@ -1,12 +1,24 @@
 # ui/views/master_data/partner/edit_view.py
 #
-# Partnerek beállítás nézet.
-# C1: Lekérdezés gomb → DB lekérdezés → táblázat feltöltése + rekordszám label.
-# C2i: selectionChanged signal → jobb panel feltöltése + mezők engedélyezése.
-# C2j: Új sor gomb → üres jobb panel, mezők engedélyezése, Mentés aktiválása.
-# C2k: Mentés gomb → INSERT (új sor) / UPDATE (meglévő sor) DB-be.
-# C2l: Törlés gomb → megerősítés dialog → DELETE ID alapján → táblázat frissítése.
-# DB tábla: dbo.Partner_mapping  (UMS_parnter — typo az adatbázisban)
+# PartnerEditView — Partnerek beállítás nézet (CRUD + UMS szinkron + export).
+#
+# Adatbázis tábla: dbo.Partner_mapping
+# Oszlopok: ID (auto), UMS_parnter (typo az adatbázisban!), Combosoft_partner
+#
+# A BankAccountEditView-val azonos szerkezetű, de plusz funkciókkal:
+#   - UMS szinkron gomb: a Bank_lek1 nézetből beolvassa az ismeretlen partnerneveket
+#     a Partner_mapping táblába (dbo.partnerInsert tárolt eljárás)
+#   - Hiányzó Combosoft export: csak azokat a sorokat exportálja, ahol
+#     a Combosoft_partner oszlop üres (segédfunkció az adatkitöltéshez)
+#
+# Műveletek:
+#   C1: Lekérdezés → DB lekérdezés → táblázat + rekordszám
+#   C2i: Sorra kattintás → jobb panel feltöltése
+#   C2j: Új sor gomb → INSERT mód
+#   C2k: Mentés → INSERT / UPDATE
+#   C2l: Törlés → DELETE ID alapján
+#   C3:  Exportálás → teljes lista Excel-be
+#   UMS szinkron: dbo.partnerInsert tárolt eljárás hívása
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -31,7 +43,7 @@ from ui.dialogs.db_operation_progress import DbOperationProgressDialog
 from ui.icons import (
     ICON_SEARCH,
     ICON_PLUS,
-    ICON_UPLOAD,
+    ICON_UPLOAD,    # felfelé nyíl ikon (UMS szinkron gombhoz)
     ICON_TRASH,
     ICON_SAVE,
     ICON_DOWNLOAD,
@@ -44,11 +56,12 @@ from ui.icons import (
     CLR_DANGER_DIS,
 )
 
+# Alkalmazás gyökérkönyvtár (4 szinttel feljebb)
 _APP_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")
 )
 
-# DB oszlop → megjelenítési név leképezés (UMS_parnter: typo az adatbázisban)
+# DB oszlopnév → megjelenítési név (megjegyzés: "UMS_parnter" typo az adatbázisban)
 _COL_MAP = {
     "UMS_parnter": "UMS partner",
     "Combosoft_partner": "Combosoft partner",
@@ -56,12 +69,19 @@ _COL_MAP = {
 
 
 class PartnerEditView(QWidget):
+    """Partnerek kezelő nézet.
+
+    UMS partner: a banki UMS fájlban szereplő partvernév (Column30 normalizálva).
+    Combosoft partner: az Irems/Combosoft rendszerben használt párosítandó név.
+    Az UMS szinkron automatikusan beolvassa az ismeretlen UMS partnerneveket.
+    """
+
     def __init__(self):
         super().__init__()
         self._selected_count = 0
-        self._current_id = None      # a kijelölt/szerkesztett sor ID-ja (None = új sor)
-        self._is_new_row = False     # True: Új sor módban vagyunk
-        self._df_full = None         # teljes DataFrame ID oszloppal
+        self._current_id = None
+        self._is_new_row = False
+        self._df_full = None
         self._db = DatabaseManager()
         self._progress_dialog = None
         self._setup_ui()
@@ -75,21 +95,25 @@ class PartnerEditView(QWidget):
         main_layout.setContentsMargins(24, 16, 0, 16)
         main_layout.setSpacing(12)
 
-        # --- Cím ---
+        # Cím
         title = QLabel("Partnerek")
         title.setObjectName("view_title")
         main_layout.addWidget(title)
 
-        # --- Eszközsáv ---
+        # Eszközsáv
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
         toolbar.setContentsMargins(0, 0, 0, 0)
 
+        # Lekérdezés gomb
         self.query_button = QPushButton("Lekérdezés")
         set_button_icon(self.query_button, ICON_SEARCH, CLR_PRIMARY, CLR_PRIMARY_DIS)
         self.query_button.clicked.connect(self._prepare_query)
         toolbar.addWidget(self.query_button)
 
+        # UMS szinkron gomb — mindig aktív (nem függ a lekérdezéstől)
+        # Meghívja a dbo.partnerInsert tárolt eljárást, amely a Bank_lek1 nézetből
+        # beolvassa az ismeretlen partnerneveket a Partner_mapping táblába
         self.sync_button = QPushButton("UMS szinkron")
         self.sync_button.setObjectName("secondary_button")
         set_button_icon(self.sync_button, ICON_UPLOAD, CLR_SECONDARY, CLR_SECONDARY_DIS)
@@ -98,19 +122,23 @@ class PartnerEditView(QWidget):
 
         toolbar.addStretch()
 
+        # Hiányzó Combosoft export gomb — csak azokat exportálja, ahol Combosoft üres
+        # Segédfunkció: az adatrögzítőnek megmutatja, melyik UMS partnerhez kell
+        # még megadni a Combosoft párját
         self.export_missing_button = QPushButton("Hiányzó Combosoft")
         self.export_missing_button.setObjectName("secondary_button")
         set_button_icon(self.export_missing_button, ICON_DOWNLOAD, CLR_SECONDARY, CLR_SECONDARY_DIS)
         self.export_missing_button.clicked.connect(self._on_export_missing_combosoft)
         toolbar.addWidget(self.export_missing_button)
 
+        # Teljes lista exportálás
         self.export_button = QPushButton("Exportálás")
         self.export_button.setObjectName("secondary_button")
         set_button_icon(self.export_button, ICON_DOWNLOAD, CLR_SECONDARY, CLR_SECONDARY_DIS)
         self.export_button.clicked.connect(self._on_export)
         toolbar.addWidget(self.export_button)
 
-        # CRUD gombsor — 320px-es fix widget, pontosan a detail panel fölött
+        # CRUD gombsor (fix 320px, detail panel fölött)
         crud_widget = QWidget()
         crud_widget.setFixedWidth(320)
         crud_layout = QHBoxLayout(crud_widget)
@@ -142,12 +170,12 @@ class PartnerEditView(QWidget):
 
         main_layout.addLayout(toolbar)
 
-        # --- Tartalom (táblázat + jobb panel) ---
+        # Tartalom: táblázat + jobb panel
         content_layout = QHBoxLayout()
         content_layout.setSpacing(0)
         content_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Bal: info label (kezdeti állapot) + táblázat (lekérdezés után)
+        # Bal: info label + táblázat + rekordszám
         table_area = QWidget()
         table_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         table_area_layout = QVBoxLayout(table_area)
@@ -179,7 +207,7 @@ class PartnerEditView(QWidget):
 
         content_layout.addWidget(table_area, 1)
 
-        # Jobb: részlet panel
+        # Jobb panel (fix 320px, fehér háttér)
         detail_panel = QFrame()
         detail_panel.setObjectName("detail_panel")
         detail_panel.setFixedWidth(320)
@@ -190,11 +218,13 @@ class PartnerEditView(QWidget):
         detail_layout.setContentsMargins(16, 16, 16, 16)
         detail_layout.setSpacing(10)
 
+        # UMS partner mező — kötelező (ha üres, a Mentés nem engedélyezett)
         detail_layout.addWidget(self._make_field_label("UMS partner"))
         self.ums_partner_edit = QLineEdit()
         self.ums_partner_edit.setEnabled(False)
         detail_layout.addWidget(self.ums_partner_edit)
 
+        # Combosoft partner mező — opcionális (üres is lehet)
         detail_layout.addWidget(self._make_field_label("Combosoft partner"))
         self.combosoft_partner_edit = QLineEdit()
         self.combosoft_partner_edit.setEnabled(False)
@@ -217,6 +247,7 @@ class PartnerEditView(QWidget):
         QTimer.singleShot(100, self._load_data)
 
     def _load_data(self):
+        """Lekérdezi a Partner_mapping táblát és megjeleníti."""
         try:
             df = self._db.query_partner_mapping()
             self._df_full = df.copy()
@@ -254,6 +285,7 @@ class PartnerEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_selection_changed(self, selected, deselected):
+        """Sorra kattintáskor feltölti a jobb panel mezőit."""
         indexes = self.table_view.selectionModel().selectedRows()
         self._selected_count = len(indexes)
         self._update_toolbar_state()
@@ -316,10 +348,11 @@ class PartnerEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_save(self):
+        """Mentés gomb handler: validálás (csak UMS partner kötelező), majd DB művelet."""
         ums = self.ums_partner_edit.text().strip()
         combosoft = self.combosoft_partner_edit.text().strip()
 
-        # --- Validáció ---
+        # Csak az UMS partner kötelező — Combosoft üres is lehet
         if not ums:
             QMessageBox.warning(
                 self,
@@ -329,7 +362,6 @@ class PartnerEditView(QWidget):
             self.ums_partner_edit.setFocus()
             return
 
-        # --- Megerősítés ---
         confirm_msg = (
             "Biztosan hozzáadod az új partnert?"
             if self._is_new_row
@@ -345,7 +377,6 @@ class PartnerEditView(QWidget):
         if reply != QMessageBox.Yes:
             return
 
-        # --- Mentés ---
         if self._is_new_row:
             ok, msg = self._db.insert_partner(ums, combosoft)
         else:
@@ -366,6 +397,7 @@ class PartnerEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_delete(self):
+        """Törlés gomb handler: megerősítés, majd DELETE a kijelölt sorokhoz."""
         indexes = self.table_view.selectionModel().selectedRows()
         if not indexes:
             return
@@ -411,6 +443,13 @@ class PartnerEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_ums_sync(self):
+        """UMS szinkron gomb handler: megerősítés, majd tárolt eljárás hívása.
+
+        A dbo.partnerInsert eljárás a Bank_lek1 nézetből (amely az importált
+        UMS adatokat tartalmazza) beolvassa az ismeretlen partnerneveket.
+        Csak azokat a sorokat adja hozzá, amelyek még nem szerepelnek
+        a Partner_mapping táblában.
+        """
         reply = QMessageBox.question(
             self,
             "UMS szinkronizálás",
@@ -429,6 +468,7 @@ class PartnerEditView(QWidget):
         QTimer.singleShot(100, self._run_ums_sync)
 
     def _run_ums_sync(self):
+        """Elvégzi az UMS szinkronizálást: dbo.partnerInsert tárolt eljárás hívása."""
         try:
             ok, result = self._db.call_partner_insert()
             if self._progress_dialog:
@@ -436,7 +476,7 @@ class PartnerEditView(QWidget):
                 self._progress_dialog = None
             if ok:
                 QMessageBox.information(self, "Szinkronizálás sikeres", result)
-                self._prepare_query()
+                self._prepare_query()  # táblázat frissítése az új sorokkal
             else:
                 QMessageBox.critical(
                     self,
@@ -456,12 +496,14 @@ class PartnerEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_export(self):
+        """Teljes partner lista Excel exportja."""
         self._progress_dialog = DbOperationProgressDialog()
         self._progress_dialog.set_message("Exportálás folyamatban...")
         self._progress_dialog.show()
         QTimer.singleShot(100, self._run_export)
 
     def _run_export(self):
+        """Lekérdezi és Excel fájlba menti a partner mappinget."""
         try:
             df = self._db.query_partner_mapping()
             df_export = df.rename(columns={"ID": "ID", **_COL_MAP})
@@ -485,14 +527,22 @@ class PartnerEditView(QWidget):
             )
 
     def _on_export_missing_combosoft(self):
+        """Hiányzó Combosoft partner export indítása."""
         self._progress_dialog = DbOperationProgressDialog()
         self._progress_dialog.set_message("Exportálás folyamatban...")
         self._progress_dialog.show()
         QTimer.singleShot(100, self._run_export_missing)
 
     def _run_export_missing(self):
+        """Csak azokat a sorokat exportálja, ahol a Combosoft_partner mező üres.
+
+        Segédfunkció: az adatrögzítőnek megmutatja, melyik UMS partnerhez
+        kell még megadni a Combosoft párosítást.
+        Ha minden sornál ki van töltve, tájékoztató üzenet jelenik meg.
+        """
         try:
             df = self._db.query_partner_mapping()
+            # Üres vagy NaN Combosoft_partner értékű sorok kiszűrése
             missing = df[
                 df["Combosoft_partner"].isna()
                 | (df["Combosoft_partner"].astype(str).str.strip() == "")
@@ -532,11 +582,13 @@ class PartnerEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _make_field_label(self, text: str) -> QLabel:
+        """Egységes stílusú mező-felirat label."""
         label = QLabel(text)
         label.setStyleSheet("font-size: 12px; color: #495057; background: transparent;")
         return label
 
     def _update_toolbar_state(self):
+        """Törlés gomb felirat és állapot frissítése."""
         n = self._selected_count
         self.delete_button.setText(f"  Törlés ({n})" if n > 0 else "  Törlés")
         self.delete_button.setEnabled(n > 0)

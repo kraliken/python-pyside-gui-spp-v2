@@ -1,12 +1,22 @@
 # ui/views/master_data/bank_internal_code/edit_view.py
 #
-# Bank belső kódok beállítás nézet.
-# C1: Lekérdezés gomb → DB lekérdezés → táblázat feltöltése + rekordszám label.
-# C2e: selectionChanged signal → jobb panel feltöltése + mezők engedélyezése.
-# C2f: Új sor gomb → üres jobb panel, mezők engedélyezése, Mentés aktiválása.
-# C2g: Mentés gomb → INSERT (új sor) / UPDATE (meglévő sor) DB-be.
-# C2h: Törlés gomb → megerősítés dialog → DELETE ID alapján → táblázat frissítése.
-# DB tábla: dbo.Bank_belsokod
+# BankInternalCodeEditView — Bank belső kódok beállítás nézet (CRUD).
+#
+# Adatbázis tábla: dbo.Bank_belsokod
+# Oszlopok: ID (auto), Belsokod, Fokony, FokonyvText
+#
+# A BankAccountEditView-val azonos szerkezetű, de kisebb formmal:
+#   - 3 mező (Belső kód, Főkönyv, Leírás) vs 5 mező (bankszámlaszámoknál)
+#   - Leírás mező QTextEdit (többsoros) a Leíráshoz — QLineEdit helyett
+#   - Nincs deviza/partner combo — csak szöveges mezők
+#
+# Műveletek:
+#   C1: Lekérdezés gomb → DB lekérdezés → táblázat + rekordszám
+#   C2e: Sorra kattintás → jobb panel feltöltése
+#   C2f: Új sor gomb → üres panel, szerkesztés mód
+#   C2g: Mentés → INSERT / UPDATE
+#   C2h: Törlés → megerősítés → DELETE ID alapján
+#   C3:  Exportálás → Excel az exports/ mappába
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -17,7 +27,7 @@ from PySide6.QtWidgets import (
     QTableView,
     QHeaderView,
     QLineEdit,
-    QTextEdit,
+    QTextEdit,    # többsoros szövegbeviteli mező (a Leírás mezőhöz)
     QFrame,
     QSizePolicy,
     QMessageBox,
@@ -44,11 +54,12 @@ from ui.icons import (
     CLR_DANGER_DIS,
 )
 
+# Alkalmazás gyökérkönyvtár (4 szinttel feljebb: bank_internal_code → master_data → views → ui → v2)
 _APP_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")
 )
 
-# DB oszlop → megjelenítési név leképezés
+# DB oszlopnév → megjelenítési név leképezés (táblázat fejlécekhez és exporthoz)
 _COL_MAP = {
     "Belsokod": "Belső kód",
     "Fokony": "Főkönyv",
@@ -57,12 +68,18 @@ _COL_MAP = {
 
 
 class BankInternalCodeEditView(QWidget):
+    """Bank belső kódok kezelő nézet.
+
+    A belső kód (pl. banki elszámolási kód) és a hozzá tartozó főkönyvi szám
+    és leírás karbantartása. Struktúra: bal táblázat + jobb 320px-es szerkesztő panel.
+    """
+
     def __init__(self):
         super().__init__()
-        self._selected_count = 0
-        self._current_id = None  # a kijelölt/szerkesztett sor ID-ja (None = új sor)
-        self._is_new_row = False  # True: Új sor módban vagyunk
-        self._df_full = None  # teljes DataFrame ID oszloppal
+        self._selected_count = 0    # kijelölt sorok száma
+        self._current_id = None     # szerkesztett sor DB ID-ja
+        self._is_new_row = False    # True: INSERT kell, False: UPDATE kell
+        self._df_full = None        # teljes DataFrame ID oszloppal
         self._db = DatabaseManager()
         self._progress_dialog = None
         self._setup_ui()
@@ -76,12 +93,12 @@ class BankInternalCodeEditView(QWidget):
         main_layout.setContentsMargins(24, 16, 0, 16)
         main_layout.setSpacing(12)
 
-        # --- Cím ---
+        # Cím
         title = QLabel("Bank belső kódok")
         title.setObjectName("view_title")
         main_layout.addWidget(title)
 
-        # --- Eszközsáv ---
+        # Eszközsáv
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
         toolbar.setContentsMargins(0, 0, 0, 0)
@@ -99,7 +116,7 @@ class BankInternalCodeEditView(QWidget):
         self.export_button.clicked.connect(self._on_export)
         toolbar.addWidget(self.export_button)
 
-        # CRUD gombsor — 320px-es fix widget, pontosan a detail panel fölött
+        # CRUD gombsor — pontosan a detail panel fölött (fix 320px)
         crud_widget = QWidget()
         crud_widget.setFixedWidth(320)
         crud_layout = QHBoxLayout(crud_widget)
@@ -131,12 +148,12 @@ class BankInternalCodeEditView(QWidget):
 
         main_layout.addLayout(toolbar)
 
-        # --- Tartalom (táblázat + jobb panel) ---
+        # Tartalom: táblázat (bal) + szerkesztő panel (jobb)
         content_layout = QHBoxLayout()
         content_layout.setSpacing(0)
         content_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Bal: info label (kezdeti állapot) + táblázat (lekérdezés után)
+        # Bal: info label + táblázat + rekordszám
         table_area = QWidget()
         table_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         table_area_layout = QVBoxLayout(table_area)
@@ -168,7 +185,7 @@ class BankInternalCodeEditView(QWidget):
 
         content_layout.addWidget(table_area, 1)
 
-        # Jobb: részlet panel
+        # Jobb panel (fix 320px, fehér háttér)
         detail_panel = QFrame()
         detail_panel.setObjectName("detail_panel")
         detail_panel.setFixedWidth(320)
@@ -179,20 +196,24 @@ class BankInternalCodeEditView(QWidget):
         detail_layout.setContentsMargins(16, 16, 16, 16)
         detail_layout.setSpacing(10)
 
+        # Belső kód mező
         detail_layout.addWidget(self._make_field_label("Belső kód"))
         self.bc_code_edit = QLineEdit()
         self.bc_code_edit.setEnabled(False)
         detail_layout.addWidget(self.bc_code_edit)
 
+        # Főkönyvi szám mező
         detail_layout.addWidget(self._make_field_label("Főkönyv"))
         self.bc_ledger_edit = QLineEdit()
         self.bc_ledger_edit.setEnabled(False)
         detail_layout.addWidget(self.bc_ledger_edit)
 
+        # Leírás mező — QTextEdit (többsoros), fix 80px magassággal
+        # A QLineEdit helyett QTextEdit-et használunk, mert a leírás hosszabb lehet
         detail_layout.addWidget(self._make_field_label("Leírás"))
         self.bc_description_edit = QTextEdit()
         self.bc_description_edit.setEnabled(False)
-        self.bc_description_edit.setFixedHeight(80)
+        self.bc_description_edit.setFixedHeight(80)  # kb. 4 sor magasság
         detail_layout.addWidget(self.bc_description_edit)
 
         detail_layout.addStretch()
@@ -212,9 +233,10 @@ class BankInternalCodeEditView(QWidget):
         QTimer.singleShot(100, self._load_data)
 
     def _load_data(self):
+        """Lekérdezi a Bank_belsokod táblát és megjeleníti a táblázatban."""
         try:
             df = self._db.query_bank_internal_codes()
-            self._df_full = df.copy()
+            self._df_full = df.copy()  # ID megtartva
 
             df_display = df.drop(columns=["ID"], errors="ignore").rename(
                 columns=_COL_MAP
@@ -251,6 +273,7 @@ class BankInternalCodeEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_selection_changed(self, selected, deselected):
+        """Sorra kattintáskor feltölti a jobb panel mezőit."""
         indexes = self.table_view.selectionModel().selectedRows()
         self._selected_count = len(indexes)
         self._update_toolbar_state()
@@ -276,6 +299,7 @@ class BankInternalCodeEditView(QWidget):
 
             self.bc_code_edit.setText(get_val("Belső kód"))
             self.bc_ledger_edit.setText(get_val("Főkönyv"))
+            # setPlainText: QTextEdit-hez használjuk (nem setText)
             self.bc_description_edit.setPlainText(get_val("Leírás"))
             self._enable_detail_panel(True)
             self.save_button.setEnabled(True)
@@ -302,6 +326,7 @@ class BankInternalCodeEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_add_row(self):
+        """Új sor mód aktiválása — panel ürítése, szerkesztés engedélyezése."""
         self.table_view.clearSelection()
         self._is_new_row = True
         self._current_id = None
@@ -317,11 +342,12 @@ class BankInternalCodeEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_save(self):
+        """Mentés gomb handler: validálás, megerősítés, INSERT vagy UPDATE."""
         code = self.bc_code_edit.text().strip()
         ledger = self.bc_ledger_edit.text().strip()
+        # toPlainText(): QTextEdit-ből nyers szöveget olvas (HTML formázás nélkül)
         description = self.bc_description_edit.toPlainText().strip()
 
-        # --- Validáció ---
         errors = []
         if not code:
             errors.append("• A Belső kód mező nem lehet üres.")
@@ -331,11 +357,8 @@ class BankInternalCodeEditView(QWidget):
             errors.append("• A Leírás mező nem lehet üres.")
 
         if errors:
-            QMessageBox.warning(
-                self,
-                "Érvénytelen adatok",
-                "\n".join(errors),
-            )
+            QMessageBox.warning(self, "Érvénytelen adatok", "\n".join(errors))
+            # Fókusz az első hibás mezőre
             if not code:
                 self.bc_code_edit.setFocus()
             elif not ledger:
@@ -344,7 +367,6 @@ class BankInternalCodeEditView(QWidget):
                 self.bc_description_edit.setFocus()
             return
 
-        # --- Megerősítés ---
         confirm_msg = (
             "Biztosan hozzáadod az új belső kódot?"
             if self._is_new_row
@@ -360,7 +382,6 @@ class BankInternalCodeEditView(QWidget):
         if reply != QMessageBox.Yes:
             return
 
-        # --- Mentés ---
         if self._is_new_row:
             ok, msg = self._db.insert_bank_internal_code(code, ledger, description)
         else:
@@ -370,7 +391,7 @@ class BankInternalCodeEditView(QWidget):
 
         if ok:
             QMessageBox.information(self, "Mentés sikeres", msg)
-            self._prepare_query()
+            self._prepare_query()  # táblázat frissítése
         else:
             QMessageBox.critical(
                 self,
@@ -383,6 +404,7 @@ class BankInternalCodeEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_delete(self):
+        """Törlés gomb handler: megerősítés, majd DELETE az összes kijelölt sorhoz."""
         indexes = self.table_view.selectionModel().selectedRows()
         if not indexes:
             return
@@ -434,6 +456,7 @@ class BankInternalCodeEditView(QWidget):
         QTimer.singleShot(100, self._run_export)
 
     def _run_export(self):
+        """Lekérdezi és Excel fájlba menti a belső kódokat az exports/ mappába."""
         try:
             df = self._db.query_bank_internal_codes()
             df_export = df.rename(columns={"ID": "ID", **_COL_MAP})
@@ -461,11 +484,13 @@ class BankInternalCodeEditView(QWidget):
     # ------------------------------------------------------------------ #
 
     def _make_field_label(self, text: str) -> QLabel:
+        """Egységes stílusú mező-felirat label."""
         label = QLabel(text)
         label.setStyleSheet("font-size: 12px; color: #495057; background: transparent;")
         return label
 
     def _update_toolbar_state(self):
+        """Törlés gomb felirat és állapot frissítése a kijelölt sorok száma alapján."""
         n = self._selected_count
         self.delete_button.setText(f"  Törlés ({n})" if n > 0 else "  Törlés")
         self.delete_button.setEnabled(n > 0)

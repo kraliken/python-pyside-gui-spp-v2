@@ -1,25 +1,55 @@
+# ui/views/vendor/excel_import_view.py
+#
+# VendorExcelImportView — Szállítói .XLSX fájlok importálása (Combosoft/Irems export).
+#
+# A VendorImportView (.xls, HTML alapú) mellé kiegészítő importálási nézet,
+# amely az újabb Irems XLSX formátumot kezeli (69 oszlop).
+#
+# Folyamat:
+#   1. Egyetlen .xlsx fájl kiválasztása → pd.read_excel (fejléc a 2. sorban, header=1)
+#   2. "Unnamed" fejlécű oszlopok eldobása
+#   3. Fejléc egyezés ellenőrzése: oszlopszám és oszlopnév pozíció szerint
+#   4. Adattranszformáció: 9 céloszlop kiszámítása a forrásmezőkből:
+#      - bankszamlaszam: Paym Settlement → regex alapú IBAN/DEP/HU: normalizálás
+#      - datum: Paym Date → pandas datetime → YYYY.MM.DD
+#      - fizetesi ID: Transaction ID.1 (ha üres, akkor a Transaction ID 2. előfordulása)
+#      - osszeg: Allocated Amount in Payment Currency (ha üres: Unallocated in Payment Currency)
+#      - deviza, partner neve, szamlaszam
+#   5. Mentés az IremsSzallito_stage táblába (bulk insert)
+#
+# _get_column(): statikus segédmetódus duplikált fejlécű oszlopok kezeléséhez
+# (az XLSX-ben a "Transaction ID" kétszer szerepelhet, különböző adatokkal).
+
 import os
-import re
-import pandas as pd
-from typing import Sequence, Tuple
+import re                # reguláris kifejezések (bankszámlaszám normalizáláshoz)
+import pandas as pd      # Excel beolvasás és adatkezelés
+from typing import Sequence, Tuple  # típusjelölések a _get_column metódus paramétereihez
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication
-from models.pandas_model import PandasModel
+from models.pandas_model import PandasModel                # DataFrame → QTableView
 from PySide6.QtCore import Qt
-from ui.dialogs.file_import_progress import ProgressDialog
-from ui.views.base_import_view import BaseImportView
+from ui.dialogs.file_import_progress import ProgressDialog # fájlbeolvasási várakozó dialógus
+from ui.views.base_import_view import BaseImportView       # közös import nézet logika
 
 
 class VendorExcelImportView(BaseImportView):
+    """Szállítói .XLSX fájlok importálási nézete (egyszerre 1 fájl).
+
+    Ellentétben a VendorImportView-val (több fájl, akkumuláló), ez a nézet
+    egyszerre csak 1 fájlt tölt be — ha újat választ a felhasználó, az előző törlődik.
+    """
+
     def __init__(self):
-        super().__init__()
+        super().__init__()  # BaseImportView inicializálása
         self.setup_ui(
             "Szállító adatok importálása", import_button_label="Fájl kiválasztása"
         )
 
-        self.df_to_save_in_db = pd.DataFrame()
-        self.current_file = None
+        # Csak 1 fájlt tárol — ellentétben a VendorImportView df_all megközelítésével
+        self.df_to_save_in_db = pd.DataFrame()  # a DB-be mentendő 9 oszlopos DataFrame
+        self.current_file = None                # az éppen betöltött fájl abszolút útvonala
 
-        # A csatolt forrás Excel (Unnamed oszlopok eldobása után) tényleges fejléce: 69 oszlop
+        # 69 elvárt oszlopnév az XLSX fejlécében (2. sor, Unnamed oszlopok nélkül)
+        # Ha az oszlopszám vagy az oszlopnevek nem egyeznek, a fájl visszautasításra kerül
         self.expected_columns = [
             "Transaction Type",
             "Managed Entity",
@@ -79,7 +109,7 @@ class VendorExcelImportView(BaseImportView):
             "Paid Amount in GL Currency",
             "GL Currency",
             "Payment Status",
-            "Transaction ID.1",
+            "Transaction ID.1",      # duplikált fejléc! (ez a fizetési tranzakció ID-ja)
             "Paym Date",
             "Paym Settlement",
             "Payment Line Bank Statement Reference",
@@ -97,16 +127,22 @@ class VendorExcelImportView(BaseImportView):
     # -------------------------------------------------------------------------
 
     def load_files(self):
+        """Egyetlen .xlsx fájl betöltése, fejlécellenőrzés, majd transzformáció.
+
+        Az XLSX fejléc a 2. sorban van (header=1 — nullás indexelés).
+        Az 1. sor összesített fejléc szövegeket tartalmaz (Unnamed: X formában).
+        """
         path, _ = QFileDialog.getOpenFileName(
             self, "Válassz egy .XLSX fájlt", "", "XLSX fájlok (*.xlsx)"
         )
 
         if not path:
-            return
+            return  # felhasználó visszalépett
 
-        abs_path = os.path.abspath(path)
+        abs_path = os.path.abspath(path)  # abszolút útvonal (duplikáció ellenőrzéshez)
         filename = os.path.basename(path)
 
+        # Ha ugyanaz a fájl van már betöltve, figyelmeztető üzenet
         if self.current_file and abs_path == self.current_file:
             QMessageBox.information(
                 self, "Már betöltve", "Ez a fájl már be van töltve."
@@ -117,9 +153,11 @@ class VendorExcelImportView(BaseImportView):
             QMessageBox.warning(self, "Hiba", "Csak .xlsx fájl importálható.")
             return
 
+        # Ha már van betöltve fájl, töröljük az előző adatokat (egyfájlos mód)
         if self.current_file:
             self.clear_data()
 
+        # Progress dialógus megjelenítése
         self.progress_dialog = ProgressDialog()
         self.progress_dialog.show()
         QApplication.processEvents()
@@ -127,12 +165,15 @@ class VendorExcelImportView(BaseImportView):
         filename = os.path.basename(path)
 
         try:
+            # XLSX beolvasás — header=1: 2. sor a fejléc, dtype=str: minden értéket string-ként kezel
             df = pd.read_excel(abs_path, header=1, dtype=str)
+            # "Unnamed:" prefixű oszlopok eldobása (az 1. sor összesítő fejléceinek maradványai)
             df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
 
             actual_cols = df.columns.tolist()
             expected_cols = self.expected_columns
 
+            # Oszlopszám ellenőrzés
             if len(actual_cols) != len(expected_cols):
                 if self.progress_dialog:
                     self.progress_dialog.accept()
@@ -148,6 +189,7 @@ class VendorExcelImportView(BaseImportView):
                 )
                 return
 
+            # Pozíció alapú oszlopnév egyezés ellenőrzés
             mismatches = []
             for idx, (got, exp) in enumerate(zip(actual_cols, expected_cols), start=1):
                 if got != exp:
@@ -171,27 +213,38 @@ class VendorExcelImportView(BaseImportView):
                 )
                 return
 
-            self.file_list_widget.addItem(filename)
-            self.current_file = abs_path
+            self.file_list_widget.addItem(filename)   # bal panel fájllistájához hozzáadás
+            self.current_file = abs_path              # aktuális fájl rögzítése
 
+            # --- Céloszlopok kiszámítása forrásmezőkből ---
+
+            # Banki elszámolási mező (Paym Settlement) — IBAN/DEP/HU: formátumú szöveg
             paym_settlement = self._get_column(df, "Paym Settlement")
             paym_date = self._get_column(df, "Paym Date")
             paym_currency = self._get_column(df, "Paym Currency")
-            counter_party = self._get_column(df, "Counter Party")
-            invoice_number = self._get_column(df, "Invoice Number")
+            counter_party = self._get_column(df, "Counter Party")    # partner neve
+            invoice_number = self._get_column(df, "Invoice Number")  # számlaszám
 
+            # Transaction ID.1 az XLSX-ben a fizetési tranzakció ID-ja
+            # Ha üres (régebbi exportban "Transaction ID" kétszer szerepel),
+            # a Transaction ID 2. előfordulását vesszük (_get_column occurrence=2)
             payment_transaction_id = self._get_column(df, "Transaction ID.1")
             if payment_transaction_id.eq("").all():
                 payment_transaction_id = self._get_column(
                     df, "Transaction ID", occurrence=2
                 )
 
+            # 9 céloszlop feltöltése
             self.df_to_save_in_db["bankszamlaszam"] = paym_settlement
             self.df_to_save_in_db["datum"] = paym_date
-            self.df_to_save_in_db["fajl"] = ""
+            self.df_to_save_in_db["fajl"] = ""  # üres fájlazonosító
             self.df_to_save_in_db["fizetesi ID"] = payment_transaction_id
             self.df_to_save_in_db["típus"] = "szállító"
             self.df_to_save_in_db["deviza"] = paym_currency
+
+            # Összeg: ha Allocated Amount in Payment Currency üres, akkor
+            # az Unallocated in Payment Currency értéket vesszük
+            # .where(cond, other): ahol cond False, ott other értéket helyezi be
             self.df_to_save_in_db["osszeg"] = (
                 df["Allocated Amount in Payment Currency"]
                 .fillna("")
@@ -208,6 +261,13 @@ class VendorExcelImportView(BaseImportView):
             self.df_to_save_in_db["partner neve"] = counter_party
             self.df_to_save_in_db["szamlaszam"] = invoice_number
 
+            # --- Bankszámlaszám normalizálása ---
+            # Három lehetséges forrásformátum:
+            #   1. IBAN: "HUxx 12345678 90123456" → "12345678-90123456"
+            #   2. HU:   "HU: 12345678-90123456"   → "12345678-90123456"
+            #   3. DEP:  "DEP HUF: 12345678-90123456 (HUF)" → "12345678-90123456"
+
+            # Regex minták előre fordítva (gyorsabb, ha sok sorra alkalmazzuk)
             p_iban = re.compile(r"HU\d{2}\s*([\d\s]{14,})")
             p_hu_dash = re.compile(r"HU:\s*(\d{8})-(\d{8})")
             p_dep = re.compile(
@@ -216,20 +276,24 @@ class VendorExcelImportView(BaseImportView):
             )
 
             def normalize_bank_account(x: str) -> str:
+                """Bankszámlaszám normalizálása: különböző forrásmintákból DDDDDDDD-DDDDDDDD."""
                 x = str(x)
+                # IBAN minta próba
                 m = p_iban.search(x)
                 if m:
                     num = m.group(1).replace(" ", "")[:16]
                     return f"{num[:8]}-{num[8:]}" if len(num) == 16 else num
+                # HU: minta próba
                 m = p_hu_dash.search(x)
                 if m:
                     num = "".join(m.groups())
                     return f"{num[:8]}-{num[8:]}"
+                # DEP minta próba
                 m = p_dep.search(x)
                 if m:
                     num = "".join(m.groups())
                     return f"{num[:8]}-{num[8:]}"
-                return ""
+                return ""  # egyik minta sem illeszkedett
 
             self.df_to_save_in_db["bankszamlaszam"] = (
                 self.df_to_save_in_db["bankszamlaszam"]
@@ -237,16 +301,20 @@ class VendorExcelImportView(BaseImportView):
                 .apply(normalize_bank_account)
             )
 
+            # Dátum normalizálás: bármilyen pandas által felismert formátum → "YYYY.MM.DD"
+            # errors="coerce": érvénytelen értéket NaT-ra cseréli (nem dob hibát)
             self.df_to_save_in_db["datum"] = pd.to_datetime(
                 self.df_to_save_in_db["datum"], errors="coerce"
             ).dt.strftime("%Y.%m.%d")
 
+            # Összeg konverzió: string → numerikus érték (NaN ha nem konvertálható)
             self.df_to_save_in_db["osszeg"] = pd.to_numeric(
                 self.df_to_save_in_db["osszeg"], errors="coerce"
             )
 
-            self._on_file_loaded()
+            self._on_file_loaded()  # gombállapotok frissítése (BaseImportView)
 
+            # Magyar számformátum a táblázat megjelenítéséhez
             def format_thousands(val):
                 try:
                     number = float(str(val).replace(",", "."))
@@ -265,14 +333,25 @@ class VendorExcelImportView(BaseImportView):
                 self, "Hiba", f"{filename} beolvasása sikertelen:\n{str(e)}"
             )
         finally:
+            # Progress dialógus bezárása — hiba esetén is
             if self.progress_dialog:
                 self.progress_dialog.accept()
                 self.progress_dialog = None
 
     def get_data_for_save(self) -> pd.DataFrame:
+        """A mentendő DataFrame visszaadása (az összes 9 feldolgozott oszlop)."""
         return self.df_to_save_in_db.copy()
 
     def validate_for_insert(self, df):
+        """Ellenőrzi az adatok érvényességét DB-mentés előtt.
+
+        Ellenőrzések:
+          - Kötelező oszlopok megléte és kitöltöttsége
+          - Dátum formátuma (yyyy.mm.dd)
+          - Összeg konvertálhatósága számmá
+          - típus: 'szállító' (kisbetűs)
+          - Deviza: csak HUF/EUR/USD/GBP/CHF
+        """
         required_columns = [
             "bankszamlaszam",
             "datum",
@@ -335,8 +414,9 @@ class VendorExcelImportView(BaseImportView):
         return True
 
     def run_database_save(self, df):
+        """Elvégzi a tömeges adatbázis-mentést az IremsSzallito_stage táblába."""
         df = df.copy()
-        df.columns = [f"Column{i}" for i in range(1, 10)]
+        df.columns = [f"Column{i}" for i in range(1, 10)]  # Column1..Column9 átnevezés
         success, message = self.db.insert_vendor_rows_bulk(df)
         self.hide_progress()
 
@@ -351,9 +431,10 @@ class VendorExcelImportView(BaseImportView):
     # -------------------------------------------------------------------------
 
     def clear_data(self):
+        """Aktuális fájl és táblázat állapotának ürítése."""
         super().clear_data()
-        self.current_file = None
-        self.df_to_save_in_db = pd.DataFrame()
+        self.current_file = None             # fájl referencia törlése
+        self.df_to_save_in_db = pd.DataFrame()  # üres DataFrame
 
     # -------------------------------------------------------------------------
     # Segédmetódus duplikált fejlécek kezeléséhez
@@ -368,14 +449,28 @@ class VendorExcelImportView(BaseImportView):
         alternatives: Sequence[str] = (),
         default: str = "",
     ) -> pd.Series:
-        """
-        Oszlop kiolvasása név alapján, duplikált oszlopnevek és fallback elnevezések támogatásával.
+        """Oszlop kiolvasása név alapján, duplikált oszlopnevek és fallback elnevezések támogatásával.
+
+        Args:
+            df:           a forrás DataFrame
+            name:         keresett oszlopnév
+            occurrence:   hányadik előfordulást vegyük (1 = első, 2 = második stb.)
+                          Oka: az XLSX-ben a "Transaction ID" kétszer szerepelhet,
+                          az első az számla tranzakciója, a második a fizetésé.
+            alternatives: fallback nevek, ha 'name' nem található
+            default:      alapértelmezett érték, ha egyik sem található
+
+        Returns:
+            pd.Series az oszlop értékeivel (vagy default értékekkel teli Series)
         """
         candidates: Tuple[str, ...] = (name, *tuple(alternatives))
         for cand in candidates:
+            # Ugyanolyan nevű oszlopok pozícióinak listája
             matches = [col for col in df.columns if col == cand]
             if matches and 1 <= occurrence <= len(matches):
+                # Az n-edik előfordulás pozíciója az eredeti DataFrame-ben
                 positions = [i for i, col in enumerate(df.columns) if col == cand]
                 pos = positions[occurrence - 1]
                 return df.iloc[:, pos].fillna(default)
+        # Egyik variáns sem található: üres Series visszaadása
         return pd.Series([default] * len(df), index=df.index, dtype="object")

@@ -1,6 +1,20 @@
 # ui/main_window.py
 #
-# Főablak — sidebar navigáció, fejlécsáv, QStackedWidget tartalomterület.
+# MainWindow — az alkalmazás főablaka.
+#
+# Felépítése:
+#   ┌─────────────────────────────────────────────────┐
+#   │  Fejlécsáv (40px, sötét #151929)                │
+#   ├──────────────┬──────────────────────────────────┤
+#   │  Sidebar     │  QStackedWidget (tartalomterület) │
+#   │  (210px,     │                                   │
+#   │  sötét)      │  Csak egy nézet látható egyszerre │
+#   └──────────────┴──────────────────────────────────┘
+#
+# Navigáció:
+#   - A sidebar nav gombjaira kattintva a _navigate() metódus vált nézetet
+#     a QStackedWidget-ben, és átállítja az aktív gomb stílusát
+#   - A kezdőlap kártyáiról érkező navigate_to Signal szintén _navigate()-et hív
 #
 # Változások (B1 — sidebar):
 #   - QMenuBar eltávolítva, bal oldali sötét sidebar váltja ki.
@@ -25,6 +39,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+# Az összes nézet importálása — minden entitáshoz (Bank, Szállító, Vevő, Beállítások)
+# külön osztály van, amelyet a QStackedWidget kezel
 from ui.views.home.home_view import HomeView
 from ui.views.bank.query_view import BankQueryView
 from ui.views.bank.import_view import BankImportView
@@ -42,30 +58,42 @@ from ui.views.master_data.bank_internal_code.edit_view import BankInternalCodeEd
 from ui.views.master_data.partner.edit_view import PartnerEditView
 
 
-# Sidebar színek
-_HEADER_BG = "#151929"
-_SIDEBAR_BG = "#1e2130"
-_SIDEBAR_ACTIVE_BG = "#2a3150"
-_SIDEBAR_ACTIVE_BORDER = "#3b5bdb"
-_SIDEBAR_TEXT = "#c9d1d9"
-_SIDEBAR_SECTION = "#6e7891"
-_SIDEBAR_WIDTH = 210
+# Sidebar és fejléc színkonstansok — egy helyen definiálva, hogy könnyen módosíthatók legyenek
+_HEADER_BG = "#151929"          # fejlécsáv háttérszíne (nagyon sötét kék-szürke)
+_SIDEBAR_BG = "#1e2130"         # sidebar háttérszíne (sötét kék-szürke)
+_SIDEBAR_ACTIVE_BG = "#2a3150"  # aktív nav gomb háttere (kissé világosabb kék)
+_SIDEBAR_ACTIVE_BORDER = "#3b5bdb"  # aktív gomb bal szegélye (indigo kék)
+_SIDEBAR_TEXT = "#c9d1d9"       # nav gomb szövegszíne (halvány fehér)
+_SIDEBAR_SECTION = "#6e7891"    # szekciócímke szövegszíne (szürke)
+_SIDEBAR_WIDTH = 210            # sidebar szélessége pixelben
 
 
 class MainWindow(QMainWindow):
+    """Az alkalmazás főablaka — fejlécsáv, sidebar navigáció, QStackedWidget tartalomterület."""
+
     def __init__(self, app):
         super().__init__()
         self.app = app
+
+        # Nav gombok listája (sorrendben, ahogy a sidebarba kerülnek)
         self._nav_buttons: list[QPushButton] = []
+        # Az éppen aktív (kijelölt) nav gomb referenciája
         self._active_button: QPushButton | None = None
 
-        self.setWindowTitle("BPiON - GUI")
-        self.setMinimumSize(1200, 650)
+        self.setWindowTitle("BPiON Adatfeldolgozó")
 
-        # QMenuBar elrejtése — sidebar váltja ki
+        # Minimumméret dinamikusan a képernyő méretéből számolva:
+        # a felhasználó visszakicsinyítheti, de csak kicsit (screen - 200/150px)
+        screen = app.primaryScreen().availableGeometry()
+        min_w = max(1200, screen.width() - 200)
+        min_h = max(650, screen.height() - 150)
+        self.setMinimumSize(min_w, min_h)
+
+        # QMenuBar elrejtése — sidebar váltja ki (nincs szükség menüsorra)
         self.menuBar().hide()
 
-        # Nézetek létrehozása
+        # --- Az összes nézet példányosítása induláskor ---
+        # (nem "lazy loading" — minden nézet kész van, csak a láthatóság vált)
         self.home_view = HomeView()
         self.bank_query_view = BankQueryView()
         self.bank_import_view = BankImportView()
@@ -79,7 +107,7 @@ class MainWindow(QMainWindow):
         self.bank_internal_code_edit_view = BankInternalCodeEditView()
         self.partner_edit_view = PartnerEditView()
 
-        # Főwidget
+        # --- Főwidget: minden widget ebbe kerül ---
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
@@ -87,10 +115,10 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Fejlécsáv (teljes szélességben, sötét)
+        # Fejlécsáv: teljes szélességben, felül
         main_layout.addWidget(self._build_header())
 
-        # Törzs: sidebar + tartalomterület
+        # Törzsterület: sidebar bal oldalt + tartalomterület jobb oldalt
         body = QWidget()
         body_layout = QHBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
@@ -98,7 +126,8 @@ class MainWindow(QMainWindow):
 
         body_layout.addWidget(self._build_sidebar())
 
-        # QStackedWidget — tartalomterület
+        # QStackedWidget — a tartalomterület:
+        # egyszerre csak egy widget látható; nav gomb kattintásra vált
         self.stacked_widget = QStackedWidget()
         self.stacked_widget.setStyleSheet("QStackedWidget { background: white; }")
         for view in [
@@ -117,14 +146,14 @@ class MainWindow(QMainWindow):
         ]:
             self.stacked_widget.addWidget(view)
 
-        body_layout.addWidget(self.stacked_widget, 1)
+        body_layout.addWidget(self.stacked_widget, 1)  # stretch=1: kitölti a fennmaradó helyet
         main_layout.addWidget(body, 1)
 
         # Kezdőlap „Gyors műveletek" kártyák → navigáció bekötése.
-        # HomeView.navigate_to Signal-t bocsát ki; itt kötjük az egyes
-        # action-stringeket a megfelelő nézethez és sidebar-gombhoz.
+        # HomeView.navigate_to Signal-t bocsát ki kártyára kattintáskor;
+        # az _action_map köti össze a string-kulcsokat a nézettel és sidebar-gombbal.
         #
-        # _nav_buttons index-térkép (a _build_sidebar() sorrendje alapján):
+        # _nav_buttons index-térkép (a _build_sidebar() add() hívásainak sorrendje):
         #   0  Kezdőlap
         #   1  Bank › Lekérdezés
         #   2  Bank › Importálás              ← bank_import
@@ -142,7 +171,7 @@ class MainWindow(QMainWindow):
         }
         self.home_view.navigate_to.connect(self._handle_home_navigate)
 
-        # Kezdőlap aktív alapértelmezetten
+        # Kezdőlap legyen az alapértelmezetten aktív nézet
         self._navigate(self.home_view, self._nav_buttons[0])
 
     # ------------------------------------------------------------------ #
@@ -150,22 +179,30 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _build_header(self) -> QWidget:
+        """Felépíti a sötét fejlécsávot (40px magas, teljes szélességű).
+
+        Jelenleg csak a verziószámot tartalmazza jobb oldalon.
+        Az alkalmazásnév feliratos label ki van kommentelve.
+        """
         header = QWidget()
         header.setObjectName("app_header")
         header.setFixedHeight(40)
+        # objectName-alapú selector: csak ezt a widgetet stílozza, a gyermekeket nem
         header.setStyleSheet(f"QWidget#app_header {{ background: {_HEADER_BG}; }}")
 
         layout = QHBoxLayout(header)
         layout.setContentsMargins(16, 0, 16, 0)
 
-        title = QLabel("■  SPP Adatfeldolgozó")
-        title.setObjectName("header_title")
-        title.setStyleSheet(
-            "color: white; font-size: 13px; font-weight: 600; background: transparent;"
-        )
-        layout.addWidget(title)
-        layout.addStretch()
+        # Alkalmazásnév felirat — kikommentelve (fejléc egyszerűsítés)
+        # title = QLabel("■  SPP Adatfeldolgozó")
+        # title.setObjectName("header_title")
+        # title.setStyleSheet(
+        #     "color: white; font-size: 13px; font-weight: 600; background: transparent;"
+        # )
+        # layout.addWidget(title)
+        layout.addStretch()   # verziót jobb oldalra tolja
 
+        # Verziószám — jobb oldalon, halvány szürke szöveg
         version = QLabel("v0.1")
         version.setObjectName("header_version")
         version.setStyleSheet(
@@ -180,6 +217,15 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _build_sidebar(self) -> QWidget:
+        """Felépíti a bal oldali navigációs sávot (210px széles, sötét háttér).
+
+        A sidebar szekciókból áll: Kezdőlap, BANK, SZÁLLÍTÓ, VEVŐ, BEÁLLÍTÁSOK.
+        Minden szekció szekciócímkéből (kis nagybetűs felirat) és nav gombokból áll.
+        Alul kilépés gomb van.
+
+        Az add() belső segédfüggvény létrehozza a nav gombot, beköteli a kattintást,
+        és hozzáadja az önfenntartó _nav_buttons listához (az index-alapú hivatkozáshoz).
+        """
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(_SIDEBAR_WIDTH)
@@ -190,48 +236,53 @@ class MainWindow(QMainWindow):
         layout.setSpacing(2)
 
         def add(label: str, view: QWidget) -> None:
+            """Nav gomb létrehozása, bekötése és hozzáadása a listához.
+
+            A lambda-ban a `btn` helyi változó kötésre kerül (closure),
+            így minden gombnak saját referenciája van a kattintáskezelőben.
+            """
             btn = self._make_nav_button(label)
             btn.clicked.connect(lambda: self._navigate(view, btn))
             layout.addWidget(btn)
             self._nav_buttons.append(btn)
 
-        # Kezdőlap
+        # Kezdőlap (index 0)
         add("  Kezdőlap", self.home_view)
 
-        layout.addSpacing(8)
+        layout.addSpacing(8)  # vizuális elválasztó a szekciók között
 
-        # BANK
+        # BANK szekció (index 1-2)
         layout.addWidget(self._make_section_label("BANK"))
-        add("  Lekérdezés", self.bank_query_view)
-        add("  Importálás", self.bank_import_view)
+        add("  Lekérdezés", self.bank_query_view)      # index 1
+        add("  Importálás", self.bank_import_view)      # index 2
 
         layout.addSpacing(8)
 
-        # SZÁLLÍTÓ
+        # SZÁLLÍTÓ szekció (index 3-4)
         layout.addWidget(self._make_section_label("SZÁLLÍTÓ"))
-        add("  Lekérdezés", self.vendor_query_view)
-        # add("  Importálás (.XLS)", self.vendor_import_view)
-        add("  Importálás (.XLSX)", self.vendor_excel_import_view)
+        add("  Lekérdezés", self.vendor_query_view)                    # index 3
+        # add("  Importálás (.XLS)", self.vendor_import_view)           # kikommentelve (legacy)
+        add("  Importálás (.XLSX)", self.vendor_excel_import_view)     # index 4
 
         layout.addSpacing(8)
 
-        # VEVŐ
+        # VEVŐ szekció (index 5-6)
         layout.addWidget(self._make_section_label("VEVŐ"))
-        add("  Lekérdezés", self.customer_query_view)
-        # add("  Importálás (.XLS)", self.customer_import_view)
-        add("  Importálás (.XLSX)", self.customer_excel_import_view)
+        add("  Lekérdezés", self.customer_query_view)                  # index 5
+        # add("  Importálás (.XLS)", self.customer_import_view)         # kikommentelve (legacy)
+        add("  Importálás (.XLSX)", self.customer_excel_import_view)   # index 6
 
         layout.addSpacing(8)
 
-        # BEÁLLÍTÁSOK
+        # BEÁLLÍTÁSOK szekció (index 7-9)
         layout.addWidget(self._make_section_label("BEÁLLÍTÁSOK"))
-        add("  Bankszámlaszám", self.bank_account_number_edit_view)
-        add("  Bank belső kód", self.bank_internal_code_edit_view)
-        add("  Partnerek", self.partner_edit_view)
+        add("  Bankszámlaszám", self.bank_account_number_edit_view)    # index 7
+        add("  Bank belső kód", self.bank_internal_code_edit_view)     # index 8
+        add("  Partnerek", self.partner_edit_view)                     # index 9
 
-        layout.addStretch()
+        layout.addStretch()   # a kilépés gombot az aljára tolja
 
-        # Kilépés gomb
+        # Kilépés gomb — az app.quit()-ot hívja (eseményhurok leállítása = alkalmazás bezárása)
         exit_btn = QPushButton("  Kilépés")
         exit_btn.setFlat(True)
         exit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -262,6 +313,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _make_section_label(self, text: str) -> QLabel:
+        """Szekciócímke (pl. 'BANK', 'SZÁLLÍTÓ') — kis nagybetűs, szürke felirat."""
         label = QLabel(text)
         label.setObjectName("sidebar_section")
         label.setFixedHeight(24)
@@ -272,6 +324,7 @@ class MainWindow(QMainWindow):
         return label
 
     def _make_nav_button(self, text: str) -> QPushButton:
+        """Nav gomb létrehozása alapstílussal (inaktív állapot)."""
         btn = QPushButton(text)
         btn.setFlat(True)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -280,6 +333,7 @@ class MainWindow(QMainWindow):
         return btn
 
     def _apply_active_style(self, btn: QPushButton) -> None:
+        """Aktív nav gomb stílusa: fehér szöveg, kék bal szegély, sötét kék háttér."""
         btn.setStyleSheet(
             f"""
             QPushButton {{
@@ -295,6 +349,7 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_inactive_style(self, btn: QPushButton) -> None:
+        """Inaktív nav gomb stílusa: halvány szöveg, átlátszó háttér, hover hatás."""
         btn.setStyleSheet(
             f"""
             QPushButton {{
@@ -314,6 +369,15 @@ class MainWindow(QMainWindow):
         )
 
     def _navigate(self, view: QWidget, button: QPushButton) -> None:
+        """Nézet- és gombváltás kezelése.
+
+        1. A QStackedWidget a kért nézetre vált (currentWidget változik)
+        2. Az előző aktív gomb visszakap inaktív stílust
+        3. Az új gomb aktív stílust kap
+        4. Az _active_button referencia frissül
+
+        Ez a metódus minden navigáció (sidebar kattintás és HomeView kártyák) esetén hívódik.
+        """
         self.stacked_widget.setCurrentWidget(view)
         if self._active_button and self._active_button is not button:
             self._apply_inactive_style(self._active_button)
@@ -321,11 +385,15 @@ class MainWindow(QMainWindow):
         self._active_button = button
 
     def _handle_home_navigate(self, action: str) -> None:
-        """Kezdőlap kártyáiról érkező navigáció kezelése."""
+        """Kezdőlap kártyáiról érkező navigáció kezelése.
+
+        A HomeView navigate_to Signal string értéket bocsát ki (pl. "bank_import").
+        Az _action_map tartalmazza a string → (nézet, gomb) leképezést.
+        """
         if action in self._action_map:
             view, btn = self._action_map[action]
             self._navigate(view, btn)
 
     def quit_app(self) -> None:
-        """Kilépés az alkalmazásból."""
+        """Kilépés az alkalmazásból (az eseményhurok leállításával)."""
         self.app.quit()

@@ -1,3 +1,20 @@
+# ui/views/customer/excel_import_view.py
+#
+# CustomerExcelImportView — Vevői .XLSX fájlok importálása (Combosoft/Irems export).
+#
+# A VendorExcelImportView-hoz nagyon hasonló, de a vevői XLSX-nek 65 oszlopa van
+# (a szállítói exportnak 69).
+#
+# Főbb eltérések a szállítóhoz képest:
+#   - expected_columns: 65 oszlop (pl. nincs "Approval Date", "Paid From", "Paid To")
+#   - partner neve: "Counter Party" mező + UNALLOCATED_PARTNER kezelés
+#   - számlaszám: "Invoice Number" + UNALLOCATED_PAYMENT kezelés
+#   - bankszámlaszám normalizálás: egyszerűbb (nincs DEP minta)
+#   - típus mező értéke: "vevő" (kisbetűs)
+#
+# UNALLOCATED_PAYMENT: az Irems rendszer így jelöli azokat a fizetési tételeket,
+# amelyek nincsenek konkrét számlához rendelve.
+
 import os
 import re
 import pandas as pd
@@ -9,16 +26,23 @@ from ui.views.base_import_view import BaseImportView
 
 
 class CustomerExcelImportView(BaseImportView):
+    """UI nézet vevő (customer) Excel (.xlsx) importhoz és validált DB-mentéshez.
+
+    Egyszerre 1 fájl tölthető be. Új fájl betöltésekor az előző törlődik.
+    """
+
     def __init__(self):
-        """UI nézet vevő (customer) Excel (.xlsx) importhoz és validált DB-mentéshez."""
         super().__init__()
         self.setup_ui(
             "Vevő adatok importálása", import_button_label="Fájl kiválasztása"
         )
 
-        self.df_to_save_in_db = pd.DataFrame()
-        self.current_file = None
+        self.df_to_save_in_db = pd.DataFrame()  # a DB-be mentendő 9 oszlopos DataFrame
+        self.current_file = None                # az éppen betöltött fájl abszolút útvonala
 
+        # 65 elvárt oszlopnév — a vevői Irems XLSX struktúrája
+        # Összehasonlítva a szállítói 69 oszloppal: hiányzik az Approval Date, Paid From,
+        # Paid To, és van Lease Group ID és extra "Remarks" oszlop
         self.expected_columns = [
             "Transaction Type",
             "Managed Entity",
@@ -128,12 +152,15 @@ class CustomerExcelImportView(BaseImportView):
         filename = os.path.basename(path)
 
         try:
+            # header=1: a 2. sor a fejléc (az 1. sor összesítő szövegeket tartalmaz)
             df = pd.read_excel(abs_path, header=1, dtype=str)
+            # Unnamed: prefixű oszlopok eldobása
             df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
 
             actual_cols = df.columns.tolist()
             expected_cols = self.expected_columns
 
+            # Oszlopszám egyezés ellenőrzés
             if len(actual_cols) != len(expected_cols):
                 if self.progress_dialog:
                     self.progress_dialog.accept()
@@ -149,6 +176,7 @@ class CustomerExcelImportView(BaseImportView):
                 )
                 return
 
+            # Pozíció alapú névegyezés ellenőrzés
             mismatches = []
             for idx, (got, exp) in enumerate(zip(actual_cols, expected_cols), start=1):
                 if got != exp:
@@ -175,12 +203,18 @@ class CustomerExcelImportView(BaseImportView):
             self.file_list_widget.addItem(filename)
             self.current_file = abs_path
 
+            # --- 9 céloszlop feltöltése ---
+
+            # Bankszámlaszám (Paym Settlement mező — IBAN vagy más formátum)
             self.df_to_save_in_db["bankszamlaszam"] = df["Paym Settlement"].fillna("")
             self.df_to_save_in_db["datum"] = df["Paym Date"].fillna("")
             self.df_to_save_in_db["fajl"] = ""
+            # Transaction ID.1 = fizetési tranzakció ID (a számlától eltérő)
             self.df_to_save_in_db["fizetesi ID"] = df["Transaction ID.1"].fillna("")
-            self.df_to_save_in_db["típus"] = "vevő"
+            self.df_to_save_in_db["típus"] = "vevő"  # kisbetűs, a szállítóval ellentétben
             self.df_to_save_in_db["deviza"] = df["Paym Currency"].fillna("")
+
+            # Összeg: ha Allocated Amount üres, Unallocated Payment értéket vesszük
             self.df_to_save_in_db["osszeg"] = (
                 df["Allocated Amount in Payment Currency"]
                 .fillna("")
@@ -195,6 +229,8 @@ class CustomerExcelImportView(BaseImportView):
                 )
             )
 
+            # Partner neve: Counter Party, kivéve ha UNALLOCATED_PAYMENT és üres → "UNALLOCATED_PARTNER"
+            # .mask(cond, value): ahol cond True, ott value értéket helyezi be
             self.df_to_save_in_db["partner neve"] = (
                 df["Counter Party"]
                 .fillna("")
@@ -202,10 +238,11 @@ class CustomerExcelImportView(BaseImportView):
                     df["Invoice Number"].fillna("").str.strip().eq("")
                     & df["Transaction Type"].eq("UNALLOCATED_PAYMENT")
                     & df["Counter Party"].fillna("").str.strip().eq(""),
-                    "UNALLOCATED_PARTNER",
+                    "UNALLOCATED_PARTNER",  # speciális értékkel jelöljük
                 )
             )
 
+            # Számlaszám: ha üres és UNALLOCATED_PAYMENT típus → "UNALLOCATED_PAYMENT" értékkel
             self.df_to_save_in_db["szamlaszam"] = (
                 df["Invoice Number"]
                 .fillna("")
@@ -216,30 +253,39 @@ class CustomerExcelImportView(BaseImportView):
                 )
             )
 
+            # --- Bankszámlaszám normalizálása ---
+            # Két lehetséges forrásformátum (vevőknél DEP minta nincs):
+            #   1. IBAN: "HUxx 12345678 90123456" → 16 jegyből: "12345678-90123456"
+            #   2. HU:  "...: 12345678-90123456"   → "12345678-90123456"
             self.df_to_save_in_db["bankszamlaszam"] = (
                 self.df_to_save_in_db["bankszamlaszam"]
                 .astype(str)
                 .apply(lambda x: x.strip())
                 .apply(
                     lambda x: (
+                        # IBAN minta: HUxx + 16+ számjegy
                         re.search(r"HU\d{2}\s*([\d\s]{14,})", x)
                         .group(1)
                         .replace(" ", "")[:16]
                         if re.search(r"HU\d{2}\s*([\d\s]{14,})", x)
                         else (
+                            # HU: minta: "...: 12345678-90123456"
                             "".join(re.search(r":\s*(\d{8})-(\d{8})", x).groups())
                             if re.search(r":\s*(\d{8})-(\d{8})", x)
                             else ""
                         )
                     )
                 )
+                # 16 jegyből "DDDDDDDD-DDDDDDDD" formátum
                 .apply(lambda num: f"{num[:8]}-{num[8:]}" if len(num) == 16 else num)
             )
 
+            # Dátum normalizálás: bármilyen pandas által felismert format → "YYYY.MM.DD"
             self.df_to_save_in_db["datum"] = pd.to_datetime(
                 self.df_to_save_in_db["datum"], errors="coerce"
             ).dt.strftime("%Y.%m.%d")
 
+            # Összeg numerikus konverzió
             self.df_to_save_in_db["osszeg"] = pd.to_numeric(
                 self.df_to_save_in_db["osszeg"], errors="coerce"
             )
@@ -269,6 +315,7 @@ class CustomerExcelImportView(BaseImportView):
                 self.progress_dialog = None
 
     def get_data_for_save(self) -> pd.DataFrame:
+        """A mentendő DataFrame visszaadása."""
         return self.df_to_save_in_db.copy()
 
     def validate_for_insert(self, df: pd.DataFrame) -> bool:
@@ -307,6 +354,7 @@ class CustomerExcelImportView(BaseImportView):
         except Exception:
             errors.append("Az 'Összeg' mező nem konvertálható decimális számmá.")
 
+        # típus ellenőrzés — vevőknél kisbetűs 'vevő'
         invalid_type = df[df["típus"] != "vevő"]
         if not invalid_type.empty:
             errors.append("A 'típus' mező minden sorban 'vevő' kell legyen.")
@@ -348,7 +396,7 @@ class CustomerExcelImportView(BaseImportView):
             QMessageBox.critical(self, "Hiba", message)
 
     # -------------------------------------------------------------------------
-    # clear_data override (extra állapot törlése)
+    # clear_data override
     # -------------------------------------------------------------------------
 
     def clear_data(self):
