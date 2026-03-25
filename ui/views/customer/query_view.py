@@ -65,7 +65,7 @@ class CustomerQueryView(QWidget):
         control_panel_layout.setSpacing(8)
 
         # Nézetcím (QSS "view_title": 18px félkövér)
-        self.title_label = QLabel("Vevő lekérdezés")
+        self.title_label = QLabel("Vevő stage tábla lekérdezése")
         self.title_label.setObjectName("view_title")
         self.title_label.setAlignment(Qt.AlignLeft)
         control_panel_layout.addWidget(self.title_label, alignment=Qt.AlignVCenter)

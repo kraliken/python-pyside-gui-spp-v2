@@ -18,17 +18,18 @@
 
 # PySide6 Qt widgetek importálása
 from PySide6.QtWidgets import (
-    QWidget,          # alap Qt widget — minden UI elem alaposztálya
-    QVBoxLayout,      # függőleges elrendező (elemeket egymás alá rakja)
-    QHBoxLayout,      # vízszintes elrendező (elemeket egymás mellé rakja)
-    QPushButton,      # kattintható gomb
-    QLabel,           # szöveg vagy kép megjelenítése
-    QSizePolicy,      # widget méretezési viselkedése
-    QMessageBox,      # felugró üzenet / megerősítő dialógus
-    QTableView,       # táblázatos adatok megjelenítése (modell alapú)
-    QHeaderView,      # táblázat fejlécének kezelője
-    QDateEdit,        # dátumválasztó mező (naptárral)
+    QWidget,  # alap Qt widget — minden UI elem alaposztálya
+    QVBoxLayout,  # függőleges elrendező (elemeket egymás alá rakja)
+    QHBoxLayout,  # vízszintes elrendező (elemeket egymás mellé rakja)
+    QPushButton,  # kattintható gomb
+    QLabel,  # szöveg vagy kép megjelenítése
+    QSizePolicy,  # widget méretezési viselkedése
+    QMessageBox,  # felugró üzenet / megerősítő dialógus
+    QTableView,  # táblázatos adatok megjelenítése (modell alapú)
+    QHeaderView,  # táblázat fejlécének kezelője
+    QDateEdit,  # dátumválasztó mező (naptárral)
 )
+
 # Qt alap típusok: Qt (igazítási konstansok), QTimer (késleltetett végrehajtás),
 # QDate (aktuális dátum lekérdezéséhez)
 from PySide6.QtCore import Qt, QTimer, QDate
@@ -37,19 +38,21 @@ import pandas as pd  # adatkezelés — a DB lekérdezés eredménye DataFrame f
 
 from database.database import DatabaseManager  # SQL Server kapcsolat és lekérdezések
 from ui.icons import (
-    ICON_SEARCH,       # nagyítólencse SVG ikon (lekérdezés gomb)
-    ICON_HISTORY,      # óra/history SVG ikon (mentés history-ba)
-    ICON_TRASH,        # kuka SVG ikon (törlés)
-    set_button_icon,   # segédfüggvény: gombon SVG ikont állít be
-    CLR_PRIMARY,       # elsődleges kék szín (aktív állapot)
-    CLR_PRIMARY_DIS,   # elsődleges szürke szín (tiltott állapot)
-    CLR_SECONDARY,     # másodlagos szürke szín (aktív)
-    CLR_SECONDARY_DIS, # másodlagos szürke szín (tiltott)
-    CLR_DANGER,        # vörös szín (aktív törlés gomb)
-    CLR_DANGER_DIS,    # halvány vörös szín (tiltott törlés gomb)
+    ICON_SEARCH,  # nagyítólencse SVG ikon (lekérdezés gomb)
+    ICON_HISTORY,  # óra/history SVG ikon (mentés history-ba)
+    ICON_TRASH,  # kuka SVG ikon (törlés)
+    set_button_icon,  # segédfüggvény: gombon SVG ikont állít be
+    CLR_PRIMARY,  # elsődleges kék szín (aktív állapot)
+    CLR_PRIMARY_DIS,  # elsődleges szürke szín (tiltott állapot)
+    CLR_SECONDARY,  # másodlagos szürke szín (aktív)
+    CLR_SECONDARY_DIS,  # másodlagos szürke szín (tiltott)
+    CLR_DANGER,  # vörös szín (aktív törlés gomb)
+    CLR_DANGER_DIS,  # halvány vörös szín (tiltott törlés gomb)
 )
-from models.pandas_model import PandasModel                    # DataFrame → QTableView modell
-from ui.dialogs.db_operation_progress import DbOperationProgressDialog  # várakozó dialógus
+from models.pandas_model import PandasModel  # DataFrame → QTableView modell
+from ui.dialogs.db_operation_progress import (
+    DbOperationProgressDialog,
+)  # várakozó dialógus
 
 
 class VendorQueryView(QWidget):
@@ -64,15 +67,17 @@ class VendorQueryView(QWidget):
 
         # Fő függőleges elrendezés: eszközsáv felül, tartalom alul
         layout = QVBoxLayout()
-        layout.setContentsMargins(16, 12, 16, 12)  # belső margók (px): bal, felső, jobb, alsó
-        layout.setSpacing(12)                       # elemek közötti távolság (px)
+        layout.setContentsMargins(
+            16, 12, 16, 12
+        )  # belső margók (px): bal, felső, jobb, alsó
+        layout.setSpacing(12)  # elemek közötti távolság (px)
 
         # --- Eszközsáv (cím + gombok vízszintesen) ---
         control_panel_layout = QHBoxLayout()
         control_panel_layout.setSpacing(8)
 
         # Nézetcím — QSS "view_title" objektumnévvel formázva (18px félkövér)
-        self.title_label = QLabel("Szállító lekérdezés")
+        self.title_label = QLabel("Szállító stage tábla lekérdezése")
         self.title_label.setObjectName("view_title")
         self.title_label.setAlignment(Qt.AlignLeft)
         control_panel_layout.addWidget(self.title_label, alignment=Qt.AlignVCenter)
@@ -89,17 +94,19 @@ class VendorQueryView(QWidget):
         # setEnabled(False): a mező le van tiltva szerkesztésre, de az ikon látható
         # Mindig a mai napot mutatja — QDate.currentDate() az induláskori dátumot adja
         self.hist_date_edit = QDateEdit()
-        self.hist_date_edit.setDisplayFormat("yyyy. MM. dd.")   # megjelenítési formátum
-        self.hist_date_edit.setCalendarPopup(True)             # naptár ikon a jobb oldalon
-        self.hist_date_edit.setDate(QDate.currentDate())       # alapértelmezett: mai nap
-        self.hist_date_edit.setFixedWidth(158)                 # fix szélesség (px)
-        self.hist_date_edit.setEnabled(False)                  # szerkesztés tiltva
+        self.hist_date_edit.setDisplayFormat("yyyy. MM. dd.")  # megjelenítési formátum
+        self.hist_date_edit.setCalendarPopup(True)  # naptár ikon a jobb oldalon
+        self.hist_date_edit.setDate(QDate.currentDate())  # alapértelmezett: mai nap
+        self.hist_date_edit.setFixedWidth(158)  # fix szélesség (px)
+        self.hist_date_edit.setEnabled(False)  # szerkesztés tiltva
         control_panel_layout.addWidget(self.hist_date_edit, alignment=Qt.AlignVCenter)
 
         # Mentés history-ba gomb — a szállítói staging adatokat az Irems_Hist táblába menti
         # A gomb csak lekérdezés után aktív (_has_data flag alapján)
         self.save_to_irems_hist_table_button = QPushButton("Mentés history-ba")
-        self.save_to_irems_hist_table_button.setObjectName("secondary_button")  # QSS: átlátszó, szürke keret
+        self.save_to_irems_hist_table_button.setObjectName(
+            "secondary_button"
+        )  # QSS: átlátszó, szürke keret
         set_button_icon(
             self.save_to_irems_hist_table_button,
             ICON_HISTORY,
@@ -143,7 +150,7 @@ class VendorQueryView(QWidget):
         # setSortingEnabled: az oszlopfejlécre kattintva rendezés
         self.table_view = QTableView()
         self.table_view.setSortingEnabled(True)
-        self.table_view.hide()   # kezdetben láthatatlan
+        self.table_view.hide()  # kezdetben láthatatlan
         self.content_layout.addWidget(self.table_view)
 
         layout.addWidget(self.center_widget)
@@ -151,8 +158,10 @@ class VendorQueryView(QWidget):
         self.setLayout(layout)  # a QWidget-nek megadjuk a fő elrendezőt
 
         # Belső állapotváltozók
-        self.progress_dialog = None  # az aktív progress dialógus referenciája (None = nincs)
-        self._has_data = False       # True, ha van megjelenített adat (gombok aktívak)
+        self.progress_dialog = (
+            None  # az aktív progress dialógus referenciája (None = nincs)
+        )
+        self._has_data = False  # True, ha van megjelenített adat (gombok aktívak)
 
         # Adatbázis kapcsolat
         self.db = DatabaseManager()
@@ -201,10 +210,10 @@ class VendorQueryView(QWidget):
                 self.table_view.horizontalHeader().setSectionResizeMode(
                     QHeaderView.Stretch
                 )
-                self.info_label.hide()    # szöveg elrejtése
-                self.table_view.show()   # táblázat megjelenítése
+                self.info_label.hide()  # szöveg elrejtése
+                self.table_view.show()  # táblázat megjelenítése
                 self._has_data = True
-                self._update_save_button_state()   # mentés gomb aktiválása
+                self._update_save_button_state()  # mentés gomb aktiválása
                 self.delete_button.setEnabled(True)  # törlés gomb aktiválása
         except Exception as e:
             QMessageBox.critical(
@@ -218,7 +227,7 @@ class VendorQueryView(QWidget):
         finally:
             # Progress dialógus bezárása — a finally blokk hiba esetén is lefut
             if hasattr(self, "progress_dialog") and self.progress_dialog:
-                self.progress_dialog.accept()   # dialógus bezárása
+                self.progress_dialog.accept()  # dialógus bezárása
                 self.progress_dialog = None
 
     def delete_data(self):
@@ -253,14 +262,15 @@ class VendorQueryView(QWidget):
             self.info_label.setText("A szállító adatok törölve lettek.")
             self.info_label.show()
             self._has_data = False
-            self._update_save_button_state()   # mentés gomb letiltása
+            self._update_save_button_state()  # mentés gomb letiltása
             self.delete_button.setEnabled(False)  # törlés gomb letiltása
         else:
             QMessageBox.critical(self, "Hiba", f"Törlés sikertelen:\n\n{message}")
 
     def save_to_irems_hist_table(self):
         """'Mentés history-ba' gomb handler: megerősítő kérdés után
-        a tárolt eljárás hívásával az IremsSzallito_stage adatait Irems_Hist-be menti."""
+        a tárolt eljárás hívásával az IremsSzallito_stage adatait Irems_Hist-be menti.
+        """
         confirm = QMessageBox.question(
             self,
             "Megerősítés",

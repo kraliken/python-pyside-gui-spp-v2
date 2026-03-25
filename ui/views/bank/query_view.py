@@ -65,11 +65,11 @@ class BankQueryView(QWidget):
         control_panel_layout = QHBoxLayout()
         control_panel_layout.setSpacing(8)
 
-        self.title_label = QLabel("Bank lekérdezés")
-        self.title_label.setObjectName("view_title")   # QSS: 18px félkövér
+        self.title_label = QLabel("Bank stage tábla lekérdezése")
+        self.title_label.setObjectName("view_title")  # QSS: 18px félkövér
         control_panel_layout.addWidget(self.title_label)
 
-        control_panel_layout.addStretch()   # a cím és a gombok közé rugalmas tér kerül
+        control_panel_layout.addStretch()  # a cím és a gombok közé rugalmas tér kerül
 
         # Lekérdezés gomb — betölti a Bank_stage tábla adatait
         self.query_button = QPushButton("Lekérdezés")
@@ -123,7 +123,7 @@ class BankQueryView(QWidget):
         self.info_label = QLabel(
             "Kattints a Lekérdezés gombra a Bank_stage tábla adatainak betöltéséhez"
         )
-        self.info_label.setObjectName("empty_label")   # QSS: szürke, középre igazított
+        self.info_label.setObjectName("empty_label")  # QSS: szürke, középre igazított
         self.info_label.setAlignment(Qt.AlignCenter)
         self.content_layout.addWidget(self.info_label)
 
@@ -137,8 +137,8 @@ class BankQueryView(QWidget):
         self.setLayout(layout)
 
         # Belső állapot
-        self.progress_dialog = None    # az aktív progress dialógus referenciája
-        self._has_data = False         # True, ha van megjelenített adat → gombok aktívak
+        self.progress_dialog = None  # az aktív progress dialógus referenciája
+        self._has_data = False  # True, ha van megjelenített adat → gombok aktívak
 
         # Adatbázis kapcsolat és lekérdezés gomb bekötése
         self.db = DatabaseManager()
@@ -193,7 +193,9 @@ class BankQueryView(QWidget):
                 model = PandasModel(df, formatters=formatters, alignments=alignments)
                 self.table_view.setModel(model)
                 header = self.table_view.horizontalHeader()
-                header.setSectionResizeMode(QHeaderView.Interactive)  # húzható oszlopszélesség
+                header.setSectionResizeMode(
+                    QHeaderView.Interactive
+                )  # húzható oszlopszélesség
                 self.info_label.hide()
                 self.table_view.show()
                 self._has_data = True
